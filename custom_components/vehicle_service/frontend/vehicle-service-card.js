@@ -213,17 +213,11 @@ class VehicleServiceCard extends HTMLElement {
     return { columns: 6, min_columns: 4, rows: "auto" };
   }
 
- _render() {
+  _render() {
     if (!this._config || !this._hass) return;
     const vehicle = readVehicle(this._hass, this._config);
-    
-    // Create a stable, lightweight signature of primitive values to prevent infinite render loops
-    const sig = vehicle ? JSON.stringify({
-      name: vehicle.name,
-      odo: vehicle.odometer,
-      services: vehicle.services.map(s => [s.id, s.status, s.milesLeft, s.monthsLeft])
-    }) : "null";
-
+    // Only re-render when something this card shows has changed
+    const sig = JSON.stringify([vehicle, this._config]);
     if (sig === this._sig) return;
     this._sig = sig;
     this._vehicle = vehicle;
@@ -566,8 +560,38 @@ const DIALOG_CSS = `
   @media (prefers-reduced-motion: reduce) { .scrim, .dialog { animation: none; } }
 `;
 
-if (!customElements.get("vehicle-service-card")) customElements.define("vehicle-service-card", VehicleServiceCard);
-if (!customElements.get("vehicle-service-dialog")) customElements.define("vehicle-service-dialog", VehicleServiceDialog);
+/*
+ * The integration loads this file early in page start-up. Home Assistant then
+ * swaps in its own (scoped) custom-element registry, which doesn't see
+ * elements defined before it existed. So define now, and keep re-checking for
+ * a while; a fresh subclass is used each time because a registry won't accept
+ * the same constructor twice.
+ */
+const ELEMENTS = {
+  "vehicle-service-card": VehicleServiceCard,
+  "vehicle-service-dialog": VehicleServiceDialog,
+};
+
+function registerElements() {
+  let all = true;
+  for (const [name, cls] of Object.entries(ELEMENTS)) {
+    if (customElements.get(name)) continue;
+    try {
+      customElements.define(name, class extends cls {});
+    } catch (e) {
+      all = false;
+    }
+    if (!customElements.get(name)) all = false;
+  }
+  return all;
+}
+
+registerElements();
+let registerTries = 0;
+const registerTimer = setInterval(() => {
+  registerElements();
+  if (++registerTries >= 120) clearInterval(registerTimer); // ~60 s
+}, 500);
 
 window.customCards = window.customCards || [];
 if (!window.customCards.some((c) => c.type === "vehicle-service-card")) {
