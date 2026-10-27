@@ -14,6 +14,7 @@ US edition. Not compatible with vehicles created by 1.x; delete and re-add them.
 - Odometer sensor ignores lower readings (glitches); km sources are converted
 
 ### Added
+- Dashboard card (`custom:vehicle-service-card`), bundled and auto-registered: photo, mileage, upcoming maintenance, all-maintenance view and a log form
 - Vehicle library (`vehicles.json`): per-vehicle maintenance schedules with generic fallback, first-interval overrides, inspect-only items and severe-conditions variants. Bundled: 2013–2014 Subaru Outback 2.5i CVT, 2017 Toyota RAV4 2.5L (both unverified)
 - User library at `/config/vehicle_service/vehicles.json`
 - Setup by VIN (NHTSA vPIC decoding), library pick, or manual entry (matched against the library)

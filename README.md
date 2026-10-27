@@ -77,6 +77,31 @@ Setup identifies the vehicle (VIN, library or manual), then asks which items to 
 
 > Upgrading from the original (metric) integration: vehicles created by it can't be migrated. Delete them before installing this version, then add them again.
 
+## Dashboard card
+
+The card is included with the integration and loads automatically; there's nothing to add under Resources. Edit a dashboard → **Add card** → **Vehicle Service**, then pick the vehicle.
+
+It shows:
+- The vehicle's name and photo
+- Current mileage
+- Up to three items due within 500 miles or 1 month, plus anything overdue
+- **See all maintenance:** every tracked item with its progress, when it's due, and when it was last done
+- **Log maintenance:** date, odometer, what was done, shop, cost and notes
+
+Tapping an item opens the log form with that item already selected.
+
+```yaml
+type: custom:vehicle-service-card
+device: 1a2b3c...            # chosen in the visual editor
+image: /local/cars/outback.jpg
+name: Outback                # optional, defaults to the device name
+upcoming_miles: 500          # optional
+upcoming_months: 1           # optional
+max_items: 3                 # optional
+```
+
+For the photo, put a landscape image in `/config/www/cars/` and reference it as `/local/cars/<file>`.
+
 ## Entities
 
 For a vehicle named "Toyota Camry":

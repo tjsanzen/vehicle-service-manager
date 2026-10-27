@@ -1,7 +1,9 @@
 """Vehicle Service Manager integration (US edition)."""
 from __future__ import annotations
 
+import hashlib
 import logging
+from pathlib import Path
 from typing import Any
 
 import voluptuous as vol
@@ -13,6 +15,7 @@ from homeassistant.exceptions import ServiceValidationError
 from homeassistant.helpers.event import async_track_state_change_event
 import homeassistant.helpers.config_validation as cv
 from homeassistant.helpers import entity_registry as er
+from homeassistant.helpers.typing import ConfigType
 
 from .const import (
     DOMAIN, PLATFORMS, CONFIG_VERSION, KM_PER_MILE,
@@ -29,6 +32,40 @@ from .helpers import add_months, parse_date
 from .store import get_store, VehicleServiceStore
 
 _LOGGER = logging.getLogger(__name__)
+
+
+CONFIG_SCHEMA = cv.config_entry_only_config_schema(DOMAIN)
+
+CARD_FILE = Path(__file__).parent / "frontend" / "vehicle-service-card.js"
+CARD_URL = f"/{DOMAIN}/vehicle-service-card.js"
+
+
+async def async_setup(hass: HomeAssistant, config: ConfigType) -> bool:
+    """Serve the dashboard card and load it on every dashboard."""
+    await _async_register_card(hass)
+    return True
+
+
+async def _async_register_card(hass: HomeAssistant) -> None:
+    if hass.http is None:   # e.g. tests without the http component
+        return
+    from homeassistant.components.frontend import DATA_EXTRA_MODULE_URL, add_extra_js_url
+    from homeassistant.components.http import StaticPathConfig
+
+    # Content hash in the URL so browsers pick up a new card after an update
+    version = await hass.async_add_executor_job(
+        lambda: hashlib.sha256(CARD_FILE.read_bytes()).hexdigest()[:8]
+    )
+    await hass.http.async_register_static_paths(
+        [StaticPathConfig(CARD_URL, str(CARD_FILE), cache_headers=False)]
+    )
+    if DATA_EXTRA_MODULE_URL in hass.data:
+        add_extra_js_url(hass, f"{CARD_URL}?v={version}")
+    else:
+        _LOGGER.warning(
+            "Frontend not loaded; add %s as a dashboard resource (JavaScript module) "
+            "to use the vehicle card", CARD_URL,
+        )
 
 
 async def async_migrate_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
