@@ -7,8 +7,10 @@ from pathlib import Path
 from typing import Any
 
 import voluptuous as vol
+from aiohttp import web
 
 from homeassistant.components import websocket_api
+from homeassistant.components.http import HomeAssistantView
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import Event, HomeAssistant, ServiceCall, callback
 from homeassistant.exceptions import ServiceValidationError
@@ -46,19 +48,38 @@ async def async_setup(hass: HomeAssistant, config: ConfigType) -> bool:
     return True
 
 
+class _CardView(HomeAssistantView):
+    """Serves the card with an explicit JavaScript content type.
+
+    A plain static path lets the host's MIME table pick the type, and some
+    systems map .js to text/plain, which browsers refuse to run as a module.
+    """
+
+    url = CARD_URL
+    name = f"{DOMAIN}:card"
+    requires_auth = False
+
+    def __init__(self, body: bytes) -> None:
+        self._body = body
+
+    async def get(self, request: web.Request) -> web.Response:
+        return web.Response(
+            body=self._body,
+            content_type="text/javascript",
+            charset="utf-8",
+            headers={"Cache-Control": "no-cache"},
+        )
+
+
 async def _async_register_card(hass: HomeAssistant) -> None:
     if hass.http is None:   # e.g. tests without the http component
         return
     from homeassistant.components.frontend import DATA_EXTRA_MODULE_URL, add_extra_js_url
-    from homeassistant.components.http import StaticPathConfig
 
+    body = await hass.async_add_executor_job(CARD_FILE.read_bytes)
     # Content hash in the URL so browsers pick up a new card after an update
-    version = await hass.async_add_executor_job(
-        lambda: hashlib.sha256(CARD_FILE.read_bytes()).hexdigest()[:8]
-    )
-    await hass.http.async_register_static_paths(
-        [StaticPathConfig(CARD_URL, str(CARD_FILE), cache_headers=False)]
-    )
+    version = hashlib.sha256(body).hexdigest()[:8]
+    hass.http.register_view(_CardView(body))
     if DATA_EXTRA_MODULE_URL in hass.data:
         add_extra_js_url(hass, f"{CARD_URL}?v={version}")
     else:
