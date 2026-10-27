@@ -213,11 +213,17 @@ class VehicleServiceCard extends HTMLElement {
     return { columns: 6, min_columns: 4, rows: "auto" };
   }
 
-  _render() {
+ _render() {
     if (!this._config || !this._hass) return;
     const vehicle = readVehicle(this._hass, this._config);
-    // Only re-render when something this card shows has changed
-    const sig = JSON.stringify([vehicle, this._config]);
+    
+    // Create a stable, lightweight signature of primitive values to prevent infinite render loops
+    const sig = vehicle ? JSON.stringify({
+      name: vehicle.name,
+      odo: vehicle.odometer,
+      services: vehicle.services.map(s => [s.id, s.status, s.milesLeft, s.monthsLeft])
+    }) : "null";
+
     if (sig === this._sig) return;
     this._sig = sig;
     this._vehicle = vehicle;
