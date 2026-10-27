@@ -1,233 +1,178 @@
-# Vehicle Service Manager für Home Assistant
+# Vehicle Service Manager (US)
 
-Trackt Service-Intervalle, Reparaturen und Reifenverschleiß für deine Fahrzeuge – als native HA-Integration mit echten Entities und einer eigenen Lovelace-Karte.
-
----
+Track maintenance, repairs, tires and what your cars cost in Home Assistant. US edition of [toxictody1337/vehicle-service-manager](https://github.com/toxictody1337/vehicle-service-manager): miles, US service items, and cost tracking.
 
 ## Features
 
-- **Service Status** mit Fortschrittsbalken und Ampel-System (OK / Im Blick / Bald fällig / Fällig / Überfällig)
-- **Erstzulassungsdatum** als Ausgangspunkt für Zeit-Intervalle, solange kein Serviceeintrag vorhanden
-- **HU/AU** direkt beim Anlegen des Fahrzeugs erfragen, automatischer Serviceeintrag
-- **Live KM-Stand** via beliebiger HA-Entität (OBD-Dongle, Fahrzeugintegration)
-- **11 Service-Punkte**: Ölwechsel, Inspektion, Bremsflüssigkeit, Innenraumfilter, Luftfilter, Zündkerzen, Kraftstofffilter, Getriebeöl, Haldex-Öl, Klimawartung, HU/AU
-- **Reparaturen & Verschleiß**: Bremsen, Stoßdämpfer, Zahnriemen, Batterie, Kupplung u.a.
-- **Reifentracking**: 4 Radpositionen, Profiltiefe, DOT-Alter, Verschleißprojektion (1,5 mm / 10.000 km)
-- **Herstellerlogos** automatisch erkannt (30+ Marken)
-- **Mehrere Fahrzeuge** parallel
-- **Binary Sensors** für Automationen (Service fällig)
-- **HA Services** zum Hinzufügen von Einträgen aus Automationen
+- **15 service items**, each tracked by miles, months or both (whichever comes due first): oil change, tire rotation, multi-point inspection, wiper blades, engine and cabin air filters, brake fluid, coolant, transmission fluid, spark plugs, differential fluid, fuel filter, battery, registration and state inspection
+- **Status** per item: `ok` → `watch` (50%) → `soon` (70%) → `due` (90%) → `overdue` (100%), plus next-due mileage and date
+- **Costs** on every service, repair and tire entry, with the shop that did the work
+- **Cost sensors**: total, this year, last 12 months and cost per mile, split into maintenance, repairs and tires
+- **Live odometer** from any HA sensor (car integration, OBD dongle); km readings are converted
+- **Tire tread** in 32nds of an inch, projected from the last measurement
+- **Multiple vehicles**, one device each
+- **Actions** for logging entries from automations, scripts or the dashboard
 
----
+## Vehicle library
 
-## Installation via HACS
+When you add a vehicle you can:
 
-### 1. Repository hinzufügen
+- **Look up by VIN.** Decoded with NHTSA's free vPIC service (make, model, year, engine, transmission, fuel).
+- **Choose from the library** directly.
+- **Enter it manually.** If the make, model and year match a library entry, it's offered to you.
 
-1. HACS öffnen → **Integrationen** → drei Punkte → **Benutzerdefinierte Repositories**
-2. URL: `https://github.com/toxictody1337/vehicle-service-manager`  
-   Kategorie: **Integration**
-3. **Hinzufügen** → anschließend im HACS-Store suchen und installieren
-4. Home Assistant neu starten
+A match pre-fills that vehicle's maintenance schedule. Anything the schedule doesn't list falls back to generic intervals, and everything stays editable. Schedules can include:
 
-### 2. Integration einrichten
+- **Miles and months.** Whichever comes due first wins.
+- **A different first interval** (e.g. coolant at 100,000 mi, then every 50,000).
+- **Inspect-only items.**
+- **A severe-conditions variant**, offered as a toggle during setup.
 
-**Einstellungen → Integrationen → + Hinzufügen → "Vehicle Service Manager"**
+Bundled schedules live in [`vehicles.json`](custom_components/vehicle_service/vehicles.json); the `_readme` block at the top documents every field. Currently included:
 
-Der Einrichtungsassistent führt durch 3 Schritte:
-1. **Fahrzeugdaten**: Hersteller, Modell, Erstzulassung, KM-Stand, letzte HU/AU, optionale Entität für Live-KM
-2. **Service-Punkte**: Auswahl der zu überwachenden Punkte
-3. **Intervalle**: Anpassung der km- und Zeit-Intervalle
+| Vehicle | Status |
+|---|---|
+| 2013–2014 Subaru Outback 2.5i CVT | Unverified – check against the 2013 booklet |
+| 2017 Toyota RAV4 2.5L gas | Unverified – check against the 2017 guide |
 
-> ⚠️ Die voreingestellten Intervalle sind Richtwerte. Bitte im Serviceheft oder der Bedienungsanleitung prüfen und anpassen. Bei Unsicherheit Werkstatt befragen. Keine Haftung für Schäden durch falsche Werte.
+**Add your own:** create `/config/vehicle_service/vehicles.json` with the same structure. It's read each time you add or configure a vehicle (no restart). Your schedules are checked first, and `generic` items you list replace the defaults. After editing a schedule, use **Configure → Reset intervals to the recommended schedule** on existing vehicles to pick up the changes.
 
-### 3. Lovelace-Karte hinzufügen
+Example:
 
-Die JavaScript-Datei wird automatisch als Lovelace-Ressource registriert.  
-Dashboard → **Karte hinzufügen** → **Benutzerdefinierte Karten** → **Vehicle Service Card**
-
-Oder manuell in der Lovelace-YAML:
-```yaml
-type: custom:vehicle-service-card
-```
-
----
-
-## Entities
-
-Pro Fahrzeug werden folgende Entities erstellt:
-
-| Typ | Beispiel | Beschreibung |
-|-----|----------|--------------|
-| `sensor` | `sensor.golf_gti_oelwechsel` | Status: ok / watch / soon / due / overdue |
-| `sensor` | `sensor.golf_gti_kilometerstand` | Aktueller KM-Stand |
-| `sensor` | `sensor.golf_gti_reifen_vl` | Profiltiefe VL in mm (projiziert) |
-| `binary_sensor` | `sensor.golf_gti_oelwechsel_faellig` | True wenn ≥ 90% |
-| `binary_sensor` | `sensor.golf_gti_service_faellig` | True wenn irgendetwas ≥ 90% |
-
-### Entity-Attribute
-
-Jede `sensor`-Entity hat u.a. folgende Attribute:
-```
-vehicle_id, service_id, percentage, status, last_service_date,
-last_service_km, km_left, months_left, interval_km, interval_months
-```
-
----
-
-## HA Services
-
-### `vehicle_service.add_service_entry`
-```yaml
-service: vehicle_service.add_service_entry
-data:
-  vehicle_id: "abc-123-uuid"
-  entry_date: "2024-03-15"
-  km: 79500
-  services:
-    - oil
-    - inspection
-  notes: "Freie Werkstatt Musterstadt"
-```
-
-### `vehicle_service.update_km`
-```yaml
-service: vehicle_service.update_km
-data:
-  vehicle_id: "abc-123-uuid"
-  km: 80000
-```
-
-### `vehicle_service.add_repair`
-```yaml
-service: vehicle_service.add_repair
-data:
-  vehicle_id: "abc-123-uuid"
-  entry_date: "2024-03-15"
-  km: 79500
-  category: brakes_front
-  description: "Textar Bremsbeläge"
-  cost: 180
-```
-
-### `vehicle_service.add_tire`
-```yaml
-service: vehicle_service.add_tire
-data:
-  vehicle_id: "abc-123-uuid"
-  entry_date: "2024-04-01"
-  km: 80000
-  type: summer
-  axle: all
-  width: 205
-  ratio: 55
-  rim: 16
-  brand: Michelin
-  dot: "2323"
-  vl: 8.0
-  vr: 8.0
-  hl: 8.0
-  hr: 8.0
-```
-
----
-
-## Automationen – Beispiele
-
-### Benachrichtigung bei fälligem Service
-```yaml
-automation:
-  - alias: "Service fällig – Benachrichtigung"
-    trigger:
-      - platform: state
-        entity_id: binary_sensor.golf_gti_service_faellig
-        to: "on"
-    action:
-      - service: notify.mobile_app
-        data:
-          title: "🔧 Service fällig"
-          message: >
-            {{ states('sensor.golf_gti_service_faellig') }} –
-            Bitte Service-Termin vereinbaren.
-```
-
-### Automatische KM-Übernahme aus OBD-Integration
-```yaml
-# Alternativ zur Konfiguration in der Integration:
-automation:
-  - alias: "KM-Stand automatisch übernehmen"
-    trigger:
-      - platform: state
-        entity_id: sensor.obd_odometer
-    action:
-      - service: vehicle_service.update_km
-        data:
-          vehicle_id: "abc-123-uuid"
-          km: "{{ states('sensor.obd_odometer') | int }}"
-```
-
----
-
-## Reifenverschleiß-Berechnung
-
-Die projizierte Profiltiefe wird berechnet als:
-
-```
-aktuelle_tiefe = ursprüngliche_tiefe − (gefahrene_km × 1,5 / 10.000)
-```
-
-Empfohlene Verschleißgrenzen:
-- **Sommerreifen**: 3,0 mm
-- **Winterreifen / Ganzjahresreifen**: 4,0 mm
-- **Gesetzliches Minimum**: 1,6 mm
-
----
-
-## Hinweise & Haftungsausschluss
-
-> Die voreingestellten Intervalle und Berechnungen (Reifenverschleiß, Service-Fälligkeiten) sind Richtwerte ohne Gewähr. Der tatsächliche Wartungsbedarf hängt von Fahrzeugmodell, Fahrweise und Umgebungsbedingungen ab. Prüfe alle Angaben anhand des Servicehefts und der Fahrzeugdokumentation. Keine Haftung für Schäden durch fehlerhafte Werte oder fehlerhafte Interpretation der angezeigten Daten.
-
----
-
-
----
-
-## Entwicklung & Attribution
-
-Diese Integration wurde mit Unterstützung von **Claude (Anthropic AI)** entwickelt.
-
-### Verwendete Drittanbieter-Dienste
-
-| Dienst | Verwendung | Lizenz/Bedingungen |
-|--------|-----------|-------------------|
-| [logo.dev](https://logo.dev) | Herstellerlogos der Fahrzeugkarten | Kostenloser Plan, eigener API-Key erforderlich |
-| [Material Design Icons](https://materialdesignicons.com) | Icons via Home Assistant | Apache 2.0 |
-| Home Assistant APIs | WebSocket, Config Flow, Storage | Apache 2.0 |
-
-### logo.dev API-Key
-
-Die Integration verwendet logo.dev für automatische Herstellerlogos (Skoda, VW, BMW etc.).
-Der im Code enthaltene API-Key ist ein öffentlicher Demo-Key. Für den produktiven Einsatz
-empfehle ich einen **eigenen kostenlosen Account** unter [logo.dev](https://logo.dev) zu erstellen
-und den Key in der JS-Datei zu ersetzen:
-
-```javascript
-// In vehicle-service-card.js, Zeile ~50:
-function logoUrl(d) {
-  return `https://img.logo.dev/${d}?token=DEIN_EIGENER_KEY&size=64&format=png`;
+```json
+{
+  "makes": {
+    "honda": {
+      "name": "Honda",
+      "models": {
+        "civic": {
+          "name": "Civic",
+          "schedules": [
+            {
+              "id": "honda-civic-2016-2021-2.0",
+              "years": [2016, 2021],
+              "engines": ["2.0"],
+              "source": "2019 Civic owner's manual",
+              "verified": true,
+              "intervals": {
+                "oil": { "miles": 7500, "months": 12 },
+                "coolant": { "first_miles": 120000, "first_months": 120, "miles": 60000, "months": 60 }
+              }
+            }
+          ]
+        }
+      }
+    }
+  }
 }
 ```
 
----
+## Installation (HACS)
 
-## Lizenz
+1. HACS → three dots → **Custom repositories** → add this repo's URL as an **Integration**
+2. Install **Vehicle Service Manager (US)** and restart Home Assistant
+3. **Settings → Devices & services → Add integration → Vehicle Service Manager**
 
-MIT License – siehe [LICENSE](LICENSE)
+Setup identifies the vehicle (VIN, library or manual), then asks which items to track and their intervals. Check intervals against your owner's manual. Change any of it later with **Configure**.
 
-> Diese Software wird ohne Gewähr bereitgestellt. Die Intervalwerte und Berechnungen sind 
-> Richtwerte ohne Garantie. Prüfe alle Angaben anhand des Servicehefts deines Fahrzeugs.
-> Keine Haftung für Schäden durch fehlerhafte Werte oder Interpretation der Daten.
+> Upgrading from the original (metric) integration: vehicles created by it can't be migrated. Delete them before installing this version, then add them again.
 
-## Mitwirken / Issues
+## Entities
 
-Fehler oder Verbesserungsvorschläge bitte als [GitHub Issue](https://github.com/toxictody1337/vehicle-service-manager/issues) melden.
+For a vehicle named "Toyota Camry":
+
+| Entity | State |
+|---|---|
+| `sensor.toyota_camry_oil_change` (one per item) | `ok` / `watch` / `soon` / `due` / `overdue` |
+| `binary_sensor.toyota_camry_oil_change_due` (one per item) | on at ≥ 90% |
+| `binary_sensor.toyota_camry_service_due` | on if anything is due |
+| `sensor.toyota_camry_odometer` | miles |
+| `sensor.toyota_camry_total_cost` | lifetime spend |
+| `sensor.toyota_camry_cost_this_year` | spend this calendar year |
+| `sensor.toyota_camry_cost_last_12_months` | rolling 12-month spend |
+| `sensor.toyota_camry_cost_per_mile` | spend since the car was added ÷ miles since |
+| `sensor.toyota_camry_tire_tread_left_front` (×4) | projected tread, 32nds |
+
+Service sensors carry `percentage`, `action` (`replace`/`inspect`), `note`, `miles_left`, `months_left`, `next_due_odometer`, `next_due_date`, `last_service_date`, `last_service_odometer`, `last_service_cost`, `last_service_shop`, `interval_miles` and `interval_months`.
+
+Every sensor has a `vehicle_id` attribute, which the actions below need.
+
+## Actions
+
+```yaml
+action: vehicle_service.add_service_entry
+data:
+  vehicle_id: "your-vehicle-id"
+  entry_date: "2026-10-27"
+  odometer: 61250
+  services: [oil, tire_rotation]
+  shop: "Valvoline – Plano"
+  cost: 89.99
+  notes: "0W-20 synthetic"
+```
+
+```yaml
+action: vehicle_service.add_repair
+data:
+  vehicle_id: "your-vehicle-id"
+  entry_date: "2026-10-27"
+  odometer: 61250
+  category: brakes_front   # see services.yaml for all categories
+  description: "Pads and rotors"
+  shop: "Firestone"
+  cost: 412.50
+```
+
+```yaml
+action: vehicle_service.add_tire
+data:
+  vehicle_id: "your-vehicle-id"
+  entry_date: "2026-10-27"
+  odometer: 61250
+  tire_type: all_season
+  axle: all
+  size: "235/45R18"
+  brand: "Michelin"
+  model: "CrossClimate2"
+  lf: 10
+  rf: 10
+  lr: 10
+  rr: 10
+  cost: 980
+```
+
+```yaml
+action: vehicle_service.update_odometer
+data:
+  vehicle_id: "your-vehicle-id"
+  odometer: 61500
+```
+
+Registration and state-inspection fees are logged with `add_service_entry` using `services: [registration]` or `[state_inspection]`, so they count toward costs and reset the reminder.
+
+## Example automation
+
+```yaml
+alias: Car service reminder
+triggers:
+  - trigger: state
+    entity_id: binary_sensor.toyota_camry_service_due
+    to: "on"
+actions:
+  - action: notify.notify
+    data:
+      title: "Camry needs service"
+      message: >
+        Due: {{ state_attr('binary_sensor.toyota_camry_service_due', 'due_labels') | join(', ') }}
+```
+
+## Development
+
+```bash
+pip install pytest-homeassistant-custom-component
+pytest tests
+```
+
+## Disclaimer
+
+Default intervals are general guidelines, not manufacturer recommendations.

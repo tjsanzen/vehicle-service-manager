@@ -1,210 +1,311 @@
 add_service_entry:
-  name: Service-Eintrag hinzufügen
-  description: >
-    Fügt einen Service-Eintrag zur Historie eines Fahrzeugs hinzu und aktualisiert
-    den Zeitpunkt des letzten Services für die angegebenen Service-Punkte.
+  name: Log service
+  description: Log maintenance for a vehicle. Resets the interval for each item included.
   fields:
     vehicle_id:
-      name: Fahrzeug-ID
-      description: Die interne UUID des Fahrzeugs (aus den Entity-Attributen).
+      name: Vehicle ID
+      description: The vehicle's ID (shown in the vehicle_id attribute of any of its sensors).
       required: true
       selector:
         text:
     entry_date:
-      name: Datum
-      description: Datum des Services (Format YYYY-MM-DD).
+      name: Date
       required: true
       selector:
         date:
-    km:
-      name: Kilometerstand
-      description: Kilometerstand bei Durchführung des Services.
+    odometer:
+      name: Odometer
       required: true
       selector:
         number:
           min: 0
           max: 9999999
-          unit_of_measurement: km
+          mode: box
+          unit_of_measurement: mi
     services:
-      name: Service-Punkte
-      description: Liste der durchgeführten Service-Punkte (z.B. ["oil", "inspection"]).
+      name: Items serviced
       required: true
       selector:
         select:
           multiple: true
           options:
-            - oil
-            - inspection
-            - brake_fluid
-            - cabin_filter
-            - air_filter
-            - spark_plugs
-            - fuel_filter
-            - gearbox
-            - haldex
-            - ac
-            - hu
-    notes:
-      name: Notizen
-      description: Optionale Notizen zum Service (z.B. Werkstattname).
-      required: false
-      selector:
-        text:
-
-update_km:
-  name: Kilometerstand aktualisieren
-  description: >
-    Aktualisiert den Kilometerstand eines Fahrzeugs manuell.
-    (Bei konfigurierter KM-Entität wird der Stand automatisch übernommen.)
-  fields:
-    vehicle_id:
-      name: Fahrzeug-ID
-      description: Die interne UUID des Fahrzeugs.
-      required: true
-      selector:
-        text:
-    km:
-      name: Kilometerstand
-      description: Neuer Kilometerstand.
-      required: true
-      selector:
-        number:
-          min: 0
-          max: 9999999
-          unit_of_measurement: km
-
-add_repair:
-  name: Reparatur hinzufügen
-  description: Fügt einen Reparatur- oder Verschleißeintrag hinzu.
-  fields:
-    vehicle_id:
-      name: Fahrzeug-ID
-      required: true
-      selector:
-        text:
-    entry_date:
-      name: Datum
-      required: true
-      selector:
-        date:
-    km:
-      name: Kilometerstand
-      required: true
-      selector:
-        number:
-          min: 0
-          max: 9999999
-          unit_of_measurement: km
-    category:
-      name: Kategorie
-      required: true
-      selector:
-        select:
-          options:
-            - brakes_front
-            - brakes_rear
-            - brakes_full
-            - discs_front
-            - discs_rear
-            - shock_front
-            - shock_rear
-            - timing_belt
-            - battery
-            - clutch
-            - other
-    description:
-      name: Beschreibung
+            - label: "Oil change"
+              value: oil
+            - label: "Tire rotation"
+              value: tire_rotation
+            - label: "Multi-point inspection"
+              value: inspection
+            - label: "Wiper blades"
+              value: wipers
+            - label: "Engine air filter"
+              value: air_filter
+            - label: "Cabin air filter"
+              value: cabin_filter
+            - label: "Brake fluid"
+              value: brake_fluid
+            - label: "Coolant"
+              value: coolant
+            - label: "Transmission fluid"
+              value: transmission
+            - label: "Spark plugs"
+              value: spark_plugs
+            - label: "Differential fluid"
+              value: differential
+            - label: "Fuel filter"
+              value: fuel_filter
+            - label: "Battery"
+              value: battery
+            - label: "Registration"
+              value: registration
+            - label: "State inspection"
+              value: state_inspection
+    shop:
+      name: Shop
+      description: Who did the work (shop name, dealer, or DIY).
       required: false
       selector:
         text:
     cost:
-      name: Kosten (€)
+      name: Cost
+      description: Total paid, including parts, labor and tax.
       required: false
       selector:
         number:
           min: 0
-          max: 99999
-          unit_of_measurement: "€"
+          max: 100000
+          step: 0.01
+          mode: box
+          unit_of_measurement: "$"
+    notes:
+      name: Notes
+      required: false
+      selector:
+        text:
+          multiline: true
 
-add_tire:
-  name: Reifen eintragen
-  description: Trägt einen neuen Reifensatz ein.
+update_odometer:
+  name: Update odometer
+  description: Set a vehicle's odometer reading. Lower readings are ignored unless allowed.
   fields:
     vehicle_id:
-      name: Fahrzeug-ID
+      name: Vehicle ID
       required: true
       selector:
         text:
-    entry_date:
-      name: Datum (Aufziehen)
-      required: true
-      selector:
-        date:
-    km:
-      name: Kilometerstand beim Aufziehen
+    odometer:
+      name: Odometer
       required: true
       selector:
         number:
           min: 0
           max: 9999999
-          unit_of_measurement: km
-    type:
-      name: Reifentyp
+          mode: box
+          unit_of_measurement: mi
+    allow_decrease:
+      name: Allow lower reading
+      description: Use to correct a reading that was entered too high.
+      required: false
+      default: false
+      selector:
+        boolean:
+
+add_repair:
+  name: Log repair
+  description: Log a repair or wear item (brakes, battery, etc.).
+  fields:
+    vehicle_id:
+      name: Vehicle ID
+      description: The vehicle's ID (shown in the vehicle_id attribute of any of its sensors).
+      required: true
+      selector:
+        text:
+    entry_date:
+      name: Date
+      required: true
+      selector:
+        date:
+    odometer:
+      name: Odometer
+      required: true
+      selector:
+        number:
+          min: 0
+          max: 9999999
+          mode: box
+          unit_of_measurement: mi
+    category:
+      name: Category
       required: true
       selector:
         select:
           options:
-            - summer
-            - winter
-            - allseason
+            - label: "Brake pads – front"
+              value: brakes_front
+            - label: "Brake pads – rear"
+              value: brakes_rear
+            - label: "Rotors – front"
+              value: rotors_front
+            - label: "Rotors – rear"
+              value: rotors_rear
+            - label: "Suspension / shocks"
+              value: suspension
+            - label: "Alignment"
+              value: alignment
+            - label: "Timing belt"
+              value: timing_belt
+            - label: "Battery"
+              value: battery
+            - label: "Starter / alternator"
+              value: starter_alternator
+            - label: "Exhaust"
+              value: exhaust
+            - label: "Body / glass"
+              value: body_glass
+            - label: "Electrical"
+              value: electrical
+            - label: "Other"
+              value: other
+    description:
+      name: Description
+      required: false
+      selector:
+        text:
+    shop:
+      name: Shop
+      description: Who did the work (shop name, dealer, or DIY).
+      required: false
+      selector:
+        text:
+    cost:
+      name: Cost
+      description: Total paid, including parts, labor and tax.
+      required: false
+      selector:
+        number:
+          min: 0
+          max: 100000
+          step: 0.01
+          mode: box
+          unit_of_measurement: "$"
+
+add_tire:
+  name: Log tires
+  description: Log new tires or a tread depth measurement. Depths are in 32nds of an inch.
+  fields:
+    vehicle_id:
+      name: Vehicle ID
+      description: The vehicle's ID (shown in the vehicle_id attribute of any of its sensors).
+      required: true
+      selector:
+        text:
+    entry_date:
+      name: Date
+      required: true
+      selector:
+        date:
+    odometer:
+      name: Odometer
+      required: true
+      selector:
+        number:
+          min: 0
+          max: 9999999
+          mode: box
+          unit_of_measurement: mi
+    tire_type:
+      name: Tire type
+      required: true
+      selector:
+        select:
+          options:
+            - label: All-season
+              value: all_season
+            - label: Summer
+              value: summer
+            - label: Winter
+              value: winter
+            - label: All-terrain
+              value: all_terrain
     axle:
-      name: Achse
+      name: Position
       required: true
       selector:
         select:
           options:
-            - all
-            - front
-            - rear
+            - label: All four
+              value: all
+            - label: Front
+              value: front
+            - label: Rear
+              value: rear
+    size:
+      name: Size
+      description: e.g. 225/65R17
+      required: false
+      selector:
+        text:
     brand:
-      name: Marke / Hersteller
+      name: Brand
+      required: false
+      selector:
+        text:
+    model:
+      name: Tire model
       required: false
       selector:
         text:
     dot:
-      name: DOT-Code (4 Ziffern)
+      name: DOT date code
+      description: Last 4 digits of the DOT code (week and year), e.g. 2324.
       required: false
       selector:
         text:
-    vl:
-      name: Profiltiefe VL (mm)
+    lf:
+      name: Tread left front (32nds)
       required: false
       selector:
         number:
           min: 0
-          max: 12
+          max: 20
           step: 0.5
-    vr:
-      name: Profiltiefe VR (mm)
+    rf:
+      name: Tread right front (32nds)
       required: false
       selector:
         number:
           min: 0
-          max: 12
+          max: 20
           step: 0.5
-    hl:
-      name: Profiltiefe HL (mm)
+    lr:
+      name: Tread left rear (32nds)
       required: false
       selector:
         number:
           min: 0
-          max: 12
+          max: 20
           step: 0.5
-    hr:
-      name: Profiltiefe HR (mm)
+    rr:
+      name: Tread right rear (32nds)
       required: false
       selector:
         number:
           min: 0
-          max: 12
+          max: 20
           step: 0.5
+    shop:
+      name: Shop
+      description: Who did the work (shop name, dealer, or DIY).
+      required: false
+      selector:
+        text:
+    cost:
+      name: Cost
+      description: Total paid, including parts, labor and tax.
+      required: false
+      selector:
+        number:
+          min: 0
+          max: 100000
+          step: 0.01
+          mode: box
+          unit_of_measurement: "$"

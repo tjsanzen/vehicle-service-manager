@@ -1,126 +1,224 @@
 {
   "config": {
     "step": {
-      "user": {
-        "title": "Fahrzeugdaten (1/3)",
-        "description": "Grundlegende Fahrzeugdaten eingeben. Die Erstzulassung wird als Ausgangspunkt für Zeit-Intervalle genutzt, solange kein Serviceeintrag vorhanden ist.",
+      "services": {
+        "title": "What to track",
+        "description": "{schedule}\n\nPick the maintenance items to track. Items in the vehicle's schedule are pre-selected.",
         "data": {
-          "make": "Hersteller",
-          "model": "Modell",
-          "ez_month": "Monat der Erstzulassung",
-          "ez_year": "Jahr der Erstzulassung",
-          "km": "Aktueller Kilometerstand",
-          "plate": "Kennzeichen",
-          "hu_known": "Datum der letzten HU/AU bekannt?",
-          "hu_month": "Monat (letzte HU/AU)",
-          "hu_year": "Jahr (letzte HU/AU)",
-          "hu_km": "Kilometerstand bei letzter HU/AU",
-          "vin": "Fahrgestellnummer VIN (optional, 17 Zeichen)",
-          "hsn": "Schlüsselnummer HSN/TSN (optional)",
-          "entity_km": "Live KM-Stand Entität (optional)"
+          "oil": "Oil change",
+          "tire_rotation": "Tire rotation",
+          "inspection": "Multi-point inspection / scheduled maintenance",
+          "wipers": "Wiper blades",
+          "air_filter": "Engine air filter",
+          "cabin_filter": "Cabin air filter",
+          "brake_fluid": "Brake fluid",
+          "coolant": "Coolant",
+          "transmission": "Transmission fluid",
+          "spark_plugs": "Spark plugs (gas engines)",
+          "differential": "Differential / transfer case fluid (AWD/4WD)",
+          "fuel_filter": "Fuel filter (diesel)",
+          "battery": "Battery replacement",
+          "registration": "Registration renewal",
+          "state_inspection": "State inspection (safety / emissions)",
+          "severe_schedule": "Use the severe-conditions schedule"
         },
         "data_description": {
-          "entity_km": "Sensor-Entität die den aktuellen Kilometerstand liefert (z.B. OBD-Dongle).",
-          "hu_known": "Falls bekannt, wird automatisch ein Service-Eintrag für die HU/AU angelegt.",
-          "vin": "Die Fahrgestellnummer besteht aus genau 17 Zeichen."
-        }
-      },
-      "services": {
-        "title": "Service-Punkte (2/3)",
-        "description": "Wähle die Wartungspunkte aus, die du überwachen möchtest.",
-        "data": {
-          "oil":          "Ölwechsel",
-          "inspection":   "Inspektion",
-          "brake_fluid":  "Bremsflüssigkeit",
-          "cabin_filter": "Innenraumfilter",
-          "air_filter":   "Luftfilter",
-          "spark_plugs":  "Zündkerzen (nur Benziner)",
-          "fuel_filter":  "Kraftstofffilter (nur Diesel)",
-          "gearbox":      "Getriebeöl",
-          "haldex":       "Haldex-Öl (nur Allrad)",
-          "ac":           "Klimawartung",
-          "hu":           "Hauptuntersuchung (HU/AU)"
+          "severe_schedule": "Shorter intervals for towing, short trips, extreme heat or cold, dusty roads, or lots of idling."
         }
       },
       "intervals": {
-        "title": "Service-Intervalle (3/3)",
-        "description": "{disclaimer}",
+        "title": "Service intervals",
+        "description": "{schedule}\n\nSet a value to 0 to stop tracking that axis; whichever comes due first wins. Check these against your owner's manual.",
         "data": {
-          "oil_km":             "Ölwechsel – km-Intervall",
-          "oil_months":         "Ölwechsel – Monate",
-          "inspection_km":      "Inspektion – km-Intervall",
-          "inspection_months":  "Inspektion – Monate",
-          "brake_fluid_months": "Bremsflüssigkeit – Monate",
-          "cabin_filter_km":    "Innenraumfilter – km-Intervall",
-          "cabin_filter_months":"Innenraumfilter – Monate",
-          "air_filter_km":      "Luftfilter – km-Intervall",
-          "air_filter_months":  "Luftfilter – Monate",
-          "spark_plugs_km":     "Zündkerzen – km-Intervall",
-          "spark_plugs_months": "Zündkerzen – Monate",
-          "fuel_filter_km":     "Kraftstofffilter – km-Intervall",
-          "fuel_filter_months": "Kraftstofffilter – Monate",
-          "gearbox_km":         "Getriebeöl – km-Intervall",
-          "haldex_km":          "Haldex-Öl – km-Intervall",
-          "haldex_months":      "Haldex-Öl – Monate",
-          "ac_months":          "Klimawartung – Monate",
-          "hu_months":          "HU/AU – Monate"
+          "oil_miles": "Oil change – miles",
+          "oil_months": "Oil change – months",
+          "tire_rotation_miles": "Tire rotation – miles",
+          "tire_rotation_months": "Tire rotation – months",
+          "inspection_miles": "Multi-point inspection – miles",
+          "inspection_months": "Multi-point inspection – months",
+          "wipers_months": "Wiper blades – months",
+          "air_filter_miles": "Engine air filter – miles",
+          "air_filter_months": "Engine air filter – months",
+          "cabin_filter_miles": "Cabin air filter – miles",
+          "cabin_filter_months": "Cabin air filter – months",
+          "brake_fluid_miles": "Brake fluid – miles",
+          "brake_fluid_months": "Brake fluid – months",
+          "coolant_miles": "Coolant – miles",
+          "coolant_months": "Coolant – months",
+          "transmission_miles": "Transmission fluid – miles",
+          "transmission_months": "Transmission fluid – months",
+          "spark_plugs_miles": "Spark plugs – miles",
+          "spark_plugs_months": "Spark plugs – months",
+          "differential_miles": "Differential fluid – miles",
+          "differential_months": "Differential fluid – months",
+          "fuel_filter_miles": "Fuel filter – miles",
+          "fuel_filter_months": "Fuel filter – months",
+          "battery_months": "Battery – months",
+          "registration_months": "Registration – months",
+          "state_inspection_months": "State inspection – months"
+        }
+      },
+      "user": {
+        "title": "Add a vehicle",
+        "description": "How do you want to identify the vehicle? VIN lookup and the library fill in a maintenance schedule when one is available.",
+        "menu_options": {
+          "vin": "Look up by VIN",
+          "library": "Choose from the vehicle library",
+          "manual": "Enter details manually"
+        }
+      },
+      "vin": {
+        "title": "Look up by VIN",
+        "description": "The VIN is decoded with the free NHTSA vPIC service to get make, model, year, engine and transmission.",
+        "data": {
+          "vin": "VIN"
+        },
+        "data_description": {
+          "vin": "17 characters. It's on the driver's side of the dashboard, the door jamb, your registration and insurance card."
+        }
+      },
+      "library": {
+        "title": "Vehicle library",
+        "description": "Pick a maintenance schedule and your vehicle's model year. Add your own vehicles in /config/vehicle_service/vehicles.json.",
+        "data": {
+          "schedule_id": "Schedule",
+          "year": "Model year"
+        }
+      },
+      "pick_schedule": {
+        "title": "Choose a schedule",
+        "description": "More than one library schedule could fit the {vehicle}. Pick the one that matches its engine and transmission.",
+        "data": {
+          "schedule_id": "Schedule"
+        }
+      },
+      "details": {
+        "title": "Vehicle details",
+        "description": "{schedule}\n\nYou can change these later under Configure.",
+        "data": {
+          "make": "Make",
+          "model": "Model",
+          "year": "Model year",
+          "in_service_month": "In-service month",
+          "in_service_year": "In-service year",
+          "odometer": "Current odometer",
+          "plate": "License plate",
+          "vin": "VIN (optional)",
+          "odometer_entity": "Live odometer sensor (optional)",
+          "registration_known": "I know when the registration expires",
+          "registration_month": "Registration expires – month",
+          "registration_year": "Registration expires – year",
+          "inspection_known": "I know when the last state inspection was",
+          "inspection_month": "Last inspection – month",
+          "inspection_year": "Last inspection – year",
+          "inspection_odometer": "Odometer at last inspection"
+        },
+        "data_description": {
+          "in_service_month": "When the car was first sold or put into service. Used as the starting point for time-based intervals until a service is logged.",
+          "odometer_entity": "A sensor reporting the odometer, e.g. from a car integration or OBD dongle. Readings in km are converted to miles.",
+          "vin": "17 characters. Also prevents adding the same car twice.",
+          "registration_known": "Logs the last renewal so registration shows as due before it expires. Requires Registration in the next step.",
+          "inspection_known": "Logs the last inspection automatically. Requires State inspection in the next step."
         }
       }
     },
     "error": {
-      "invalid_date": "Ungültiges Datum.",
-      "no_service_selected": "Bitte mindestens einen Service-Punkt auswählen.",
-      "vin_length": "Die Fahrgestellnummer muss genau 17 Zeichen lang sein."
+      "invalid_date": "Invalid date.",
+      "no_service_selected": "Select at least one item.",
+      "vin_length": "A VIN must be exactly 17 characters.",
+      "vin_lookup_failed": "Couldn't reach the VIN lookup service. Try again, or go back and enter the vehicle manually.",
+      "vin_not_found": "That VIN wasn't recognized. Check it, or go back and enter the vehicle manually.",
+      "year_out_of_range": "This schedule doesn't cover that model year."
     },
     "abort": {
-      "already_configured": "Dieses Fahrzeug ist bereits konfiguriert."
+      "already_configured": "A vehicle with this VIN is already set up."
     }
   },
   "options": {
     "step": {
       "init": {
-        "title": "Fahrzeugdaten bearbeiten",
-        "description": "Alle Fahrzeugdaten können hier geändert werden.",
+        "title": "Edit vehicle",
+        "description": "Changing the odometer here overrides the current reading.",
         "data": {
-          "make": "Hersteller",
-          "model": "Modell",
-          "ez_month": "Monat der Erstzulassung",
-          "ez_year": "Jahr der Erstzulassung",
-          "km": "Aktueller Kilometerstand",
-          "plate": "Kennzeichen",
-          "vin": "Fahrgestellnummer VIN (17 Zeichen)",
-          "hsn": "Schlüsselnummer HSN/TSN",
-          "entity_km": "Live KM-Stand Entität"
+          "make": "Make",
+          "model": "Model",
+          "year": "Model year",
+          "in_service_month": "In-service month",
+          "in_service_year": "In-service year",
+          "odometer": "Current odometer",
+          "plate": "License plate",
+          "vin": "VIN (optional)",
+          "odometer_entity": "Live odometer sensor (optional)"
         },
         "data_description": {
-          "entity_km": "Nach dem Speichern wird die Integration neu geladen.",
-          "vin": "Die Fahrgestellnummer besteht aus genau 17 Zeichen."
+          "in_service_month": "When the car was first sold or put into service. Used as the starting point for time-based intervals until a service is logged.",
+          "odometer_entity": "A sensor reporting the odometer, e.g. from a car integration or OBD dongle. Readings in km are converted to miles.",
+          "vin": "17 characters. Also prevents adding the same car twice."
+        }
+      },
+      "services": {
+        "title": "What to track",
+        "description": "{schedule}\n\nUnchecked items' entities are removed; their service history is kept.",
+        "data": {
+          "oil": "Oil change",
+          "tire_rotation": "Tire rotation",
+          "inspection": "Multi-point inspection / scheduled maintenance",
+          "wipers": "Wiper blades",
+          "air_filter": "Engine air filter",
+          "cabin_filter": "Cabin air filter",
+          "brake_fluid": "Brake fluid",
+          "coolant": "Coolant",
+          "transmission": "Transmission fluid",
+          "spark_plugs": "Spark plugs (gas engines)",
+          "differential": "Differential / transfer case fluid (AWD/4WD)",
+          "fuel_filter": "Fuel filter (diesel)",
+          "battery": "Battery replacement",
+          "registration": "Registration renewal",
+          "state_inspection": "State inspection (safety / emissions)",
+          "severe_schedule": "Use the severe-conditions schedule",
+          "reset_intervals": "Reset intervals to the recommended schedule"
+        },
+        "data_description": {
+          "reset_intervals": "Use after editing vehicles.json, or to undo your own changes. You can still adjust them on the next screen."
         }
       },
       "intervals": {
-        "title": "Service-Intervalle bearbeiten",
-        "description": "{disclaimer}",
+        "title": "Service intervals",
+        "description": "{schedule}\n\nSet a value to 0 to stop tracking that axis; whichever comes due first wins. Check these against your owner's manual.",
         "data": {
-          "oil_km":             "Ölwechsel – km-Intervall",
-          "oil_months":         "Ölwechsel – Monate",
-          "inspection_km":      "Inspektion – km-Intervall",
-          "inspection_months":  "Inspektion – Monate",
-          "brake_fluid_months": "Bremsflüssigkeit – Monate",
-          "cabin_filter_km":    "Innenraumfilter – km-Intervall",
-          "cabin_filter_months":"Innenraumfilter – Monate",
-          "air_filter_km":      "Luftfilter – km-Intervall",
-          "air_filter_months":  "Luftfilter – Monate",
-          "spark_plugs_km":     "Zündkerzen – km-Intervall",
-          "spark_plugs_months": "Zündkerzen – Monate",
-          "fuel_filter_km":     "Kraftstofffilter – km-Intervall",
-          "fuel_filter_months": "Kraftstofffilter – Monate",
-          "gearbox_km":         "Getriebeöl – km-Intervall",
-          "haldex_km":          "Haldex-Öl – km-Intervall",
-          "haldex_months":      "Haldex-Öl – Monate",
-          "ac_months":          "Klimawartung – Monate",
-          "hu_months":          "HU/AU – Monate"
+          "oil_miles": "Oil change – miles",
+          "oil_months": "Oil change – months",
+          "tire_rotation_miles": "Tire rotation – miles",
+          "tire_rotation_months": "Tire rotation – months",
+          "inspection_miles": "Multi-point inspection – miles",
+          "inspection_months": "Multi-point inspection – months",
+          "wipers_months": "Wiper blades – months",
+          "air_filter_miles": "Engine air filter – miles",
+          "air_filter_months": "Engine air filter – months",
+          "cabin_filter_miles": "Cabin air filter – miles",
+          "cabin_filter_months": "Cabin air filter – months",
+          "brake_fluid_miles": "Brake fluid – miles",
+          "brake_fluid_months": "Brake fluid – months",
+          "coolant_miles": "Coolant – miles",
+          "coolant_months": "Coolant – months",
+          "transmission_miles": "Transmission fluid – miles",
+          "transmission_months": "Transmission fluid – months",
+          "spark_plugs_miles": "Spark plugs – miles",
+          "spark_plugs_months": "Spark plugs – months",
+          "differential_miles": "Differential fluid – miles",
+          "differential_months": "Differential fluid – months",
+          "fuel_filter_miles": "Fuel filter – miles",
+          "fuel_filter_months": "Fuel filter – months",
+          "battery_months": "Battery – months",
+          "registration_months": "Registration – months",
+          "state_inspection_months": "State inspection – months"
         }
       }
+    },
+    "error": {
+      "invalid_date": "Invalid date.",
+      "no_service_selected": "Select at least one item.",
+      "vin_length": "A VIN must be exactly 17 characters."
     }
   }
 }

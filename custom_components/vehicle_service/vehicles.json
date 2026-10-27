@@ -1,0 +1,132 @@
+{
+  "_readme": {
+    "about": "Maintenance schedules used to pre-fill intervals when a vehicle is added. JSON has no comments, so this block documents the format; it is ignored by the integration.",
+    "your_own_cars": "Don't edit this file (updates overwrite it). Create /config/vehicle_service/vehicles.json with the same structure. Your entries are checked first, and any 'generic' items you list replace the defaults below. Restart isn't needed; the file is read each time you add a vehicle.",
+    "service_ids": "oil, tire_rotation, inspection, wipers, air_filter, cabin_filter, brake_fluid, coolant, transmission, spark_plugs, differential, fuel_filter, battery, registration, state_inspection",
+    "interval_fields": {
+      "miles": "Recurring interval in miles. Omit or 0 = not tracked by mileage.",
+      "months": "Recurring interval in months. Omit or 0 = not tracked by time. If both are set, whichever comes first wins.",
+      "first_miles": "Optional. First interval when it differs from later ones (e.g. coolant first at 100,000, then every 50,000). Used until the item is logged once.",
+      "first_months": "Optional. Same as first_miles, for time.",
+      "action": "Optional. 'replace' (default) or 'inspect'. Shown as an attribute so a dashboard can treat inspections differently.",
+      "note": "Optional. Free text shown as an attribute, e.g. fluid type or conditions."
+    },
+    "generic": "Fallback intervals for every service item. Used for any vehicle without a library match, and for any item a vehicle's schedule doesn't list.",
+    "makes": {
+      "<make key>": "Lowercase, letters and numbers only (e.g. 'subaru', 'landrover'). Matched against the VIN decoder's make the same way.",
+      "name": "Display name, e.g. 'Subaru'.",
+      "models": {
+        "<model key>": "Lowercase, letters and numbers only (e.g. 'rav4', 'f150').",
+        "name": "Display name, e.g. 'RAV4'.",
+        "schedules": [
+          {
+            "id": "Required, unique and never changed once used, e.g. 'toyota-rav4-2017-2.5-gas'. Saved with each vehicle.",
+            "years": "[first, last] model year, inclusive.",
+            "engines": "Optional list of displacements in liters as strings, e.g. ['2.5']. Omit to match any.",
+            "transmissions": "Optional list: 'automatic', 'cvt', 'manual'. Omit to match any.",
+            "fuel": "Optional list: 'gasoline', 'diesel', 'hybrid', 'plug_in_hybrid', 'electric'. Omit to match any.",
+            "label": "Optional text shown when picking a schedule, e.g. '2.5i CVT'.",
+            "source": "Where the numbers came from.",
+            "verified": "true once checked against the manufacturer's booklet for this model year.",
+            "intervals": "{ service_id: interval } for the normal schedule.",
+            "severe": "Optional { service_id: interval } overrides for the severe / special-conditions schedule. Offered as a toggle during setup."
+          }
+        ]
+      }
+    }
+  },
+
+  "generic": {
+    "oil":              { "miles": 5000,   "months": 6 },
+    "tire_rotation":    { "miles": 6000,   "months": 6 },
+    "inspection":       { "miles": 15000,  "months": 12 },
+    "wipers":           { "months": 12 },
+    "air_filter":       { "miles": 20000,  "months": 24 },
+    "cabin_filter":     { "miles": 15000,  "months": 12 },
+    "brake_fluid":      { "miles": 30000,  "months": 36 },
+    "coolant":          { "miles": 60000,  "months": 60 },
+    "transmission":     { "miles": 60000 },
+    "spark_plugs":      { "miles": 100000 },
+    "differential":     { "miles": 30000 },
+    "fuel_filter":      { "miles": 30000,  "months": 24 },
+    "battery":          { "months": 48 },
+    "registration":     { "months": 12 },
+    "state_inspection": { "months": 12 }
+  },
+
+  "makes": {
+    "subaru": {
+      "name": "Subaru",
+      "models": {
+        "outback": {
+          "name": "Outback",
+          "schedules": [
+            {
+              "id": "subaru-outback-2013-2014-2.5-cvt",
+              "years": [2013, 2014],
+              "engines": ["2.5"],
+              "transmissions": ["cvt"],
+              "fuel": ["gasoline"],
+              "label": "2.5i (FB25) CVT",
+              "source": "Subaru warranty & maintenance booklet (2015 MY edition; 2013 edition not yet checked) and owner. Verify against the 2013 booklet.",
+              "verified": false,
+              "intervals": {
+                "oil":           { "miles": 6000,  "months": 6, "note": "0W-20 synthetic" },
+                "tire_rotation": { "miles": 6000,  "months": 6 },
+                "inspection":    { "miles": 12000, "months": 12, "action": "inspect", "note": "Brake pads/rotors, lines, axle boots, steering and suspension" },
+                "air_filter":    { "miles": 30000, "months": 30 },
+                "cabin_filter":  { "miles": 12000, "months": 12 },
+                "brake_fluid":   { "miles": 30000, "months": 30 },
+                "coolant":       { "first_miles": 137500, "first_months": 132, "miles": 75000, "months": 72, "note": "Subaru Super Coolant" },
+                "spark_plugs":   { "miles": 60000, "months": 60 },
+                "transmission":  { "miles": 100000, "note": "Lineartronic CVT. Subaru's normal schedule only says inspect every 30,000 mi; 100,000 mi replacement is the owner's chosen interval." },
+                "differential":  { "miles": 30000, "months": 30, "action": "inspect", "note": "Front and rear differential gear oil" }
+              },
+              "severe": {
+                "oil":          { "miles": 3000,  "months": 3 },
+                "transmission": { "miles": 25000, "note": "Severe use (e.g. repeated towing): replace every 24,855 mi / 40,000 km" },
+                "differential": { "miles": 15000, "months": 15, "note": "Front and rear differential gear oil" },
+                "brake_fluid":  { "miles": 15000, "months": 15, "note": "High-humidity or mountainous areas" }
+              }
+            }
+          ]
+        }
+      }
+    },
+
+    "toyota": {
+      "name": "Toyota",
+      "models": {
+        "rav4": {
+          "name": "RAV4",
+          "schedules": [
+            {
+              "id": "toyota-rav4-2017-2.5-gas",
+              "years": [2017, 2017],
+              "engines": ["2.5"],
+              "transmissions": ["automatic"],
+              "fuel": ["gasoline"],
+              "label": "2.5L gas (2AR-FE), 6-speed automatic",
+              "source": "Toyota 2017 RAV4 Warranty & Maintenance Guide (coolant, oil and special-conditions oil confirmed; other intervals from dealer schedules). Verify against the booklet.",
+              "verified": false,
+              "intervals": {
+                "oil":           { "miles": 10000, "months": 12, "note": "0W-20 synthetic. Use 5,000 mi / 6 mo if 0W-20 isn't used." },
+                "tire_rotation": { "miles": 5000,  "months": 6 },
+                "inspection":    { "miles": 5000,  "months": 6, "action": "inspect", "note": "Toyota's 5,000 mi / 6 mo checkup" },
+                "air_filter":    { "miles": 30000, "months": 36 },
+                "cabin_filter":  { "miles": 30000, "months": 36, "note": "Inspect at 15,000 mi; replace sooner in heavy traffic or dust" },
+                "coolant":       { "first_miles": 100000, "first_months": 120, "miles": 50000, "months": 60, "note": "Toyota Super Long Life Coolant" },
+                "spark_plugs":   { "miles": 120000 },
+                "transmission":  { "miles": 30000, "months": 36, "action": "inspect", "note": "Toyota WS fluid; no scheduled replacement under normal conditions" },
+                "differential":  { "miles": 30000, "months": 36, "action": "inspect", "note": "AWD only: rear differential and transfer oil" }
+              },
+              "severe": {
+                "oil": { "miles": 5000, "months": 6, "note": "Towing, short trips below 32°F, or extended idling" }
+              }
+            }
+          ]
+        }
+      }
+    }
+  }
+}
