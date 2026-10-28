@@ -85,8 +85,8 @@ It shows:
 - The vehicle's name and photo
 - Current mileage
 - Up to three items due within 500 miles or 1 month, plus anything overdue
-- **See all maintenance:** every tracked item with its progress, when it's due, and when it was last done
-- **Log maintenance:** switch between **Maintenance** (scheduled items; resets their reminders) and **Repair** (one-off work like a control arm or alternator, with a category and description). Both take date, odometer, shop and cost, and count toward the cost sensors
+- **See all maintenance:** two tabs. **Schedule** lists every tracked item with its progress, when it's due, and when it was last done. **History & costs** shows total spent to date (split into maintenance, repairs and tires, plus this year, last 12 months and per mile), then every service, repair and tire entry, newest first, grouped by year
+- **Log maintenance:** one form per shop visit. Tick any scheduled items (resets their reminders) and any repair areas (one-off work like control arms or an alternator), add details and the shop, and enter the cost. If you tick both kinds, the cost splits into maintenance and repair so the breakdown stays accurate. A combined visit shows as one entry in History
 
 Tapping an item opens the log form with that item already selected.
 
@@ -142,7 +142,7 @@ data:
   vehicle_id: "your-vehicle-id"
   entry_date: "2026-10-27"
   odometer: 61250
-  category: brakes_front   # see services.yaml for all categories
+  categories: [brakes_front, rotors_front]   # see services.yaml for all categories
   description: "Pads and rotors"
   shop: "Firestone"
   cost: 412.50

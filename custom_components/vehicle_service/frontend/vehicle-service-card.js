@@ -369,7 +369,6 @@ class VehicleServiceDialog extends HTMLElement {
     this._mode = mode;
     this._card = card;
     this._preselect = new Set(preselect);
-    this._kind = "service"; // or "repair"
     this._tab = mode === "history" ? "history" : "schedule";
     this._history = null;      // fetched when the History tab opens
   }
@@ -422,9 +421,10 @@ class VehicleServiceDialog extends HTMLElement {
       $("cancel").addEventListener("click", () => this._close());
       $("save").addEventListener("click", () => this._save());
       $("f").addEventListener("input", () => { $("err").textContent = ""; });
-      this.shadowRoot.querySelectorAll(".seg button").forEach((b) =>
-        b.addEventListener("click", () => this._switchKind(b.dataset.kind))
+      this.shadowRoot.querySelectorAll('input[type="checkbox"]').forEach((c) =>
+        c.addEventListener("change", () => this._syncLogForm())
       );
+      this._syncLogForm();
     } else {
       this.shadowRoot.querySelectorAll(".tabs button").forEach((b) =>
         b.addEventListener("click", () => { this._tab = b.dataset.tab; this._render(); })
@@ -484,8 +484,8 @@ class VehicleServiceDialog extends HTMLElement {
     const entries = h.entries || [];
     if (!entries.length) return summary + `<div class="muted pad">Nothing logged yet. Use Log maintenance to add the first entry.</div>`;
 
-    const icon = { service: "mdi:wrench", repair: "mdi:tools", tires: "mdi:tire" };
-    const kindLabel = { service: "Maintenance", repair: "Repair", tires: "Tires" };
+    const icon = { service: "mdi:wrench", repair: "mdi:tools", tires: "mdi:tire", visit: "mdi:car-wrench" };
+    const kindLabel = { service: "Maintenance", repair: "Repair", tires: "Tires", visit: "Maintenance + repair" };
     const years = {};
     for (const e of entries) (years[(e.date || "").slice(0, 4) || "Undated"] ||= []).push(e);
 
@@ -499,7 +499,13 @@ class VehicleServiceDialog extends HTMLElement {
             e.odometer ? `${fmtNum(e.odometer)} ${esc(v.unit)}` : "",
             e.shop ? esc(e.shop) : "",
           ].filter(Boolean).join(" · ");
-          const extra = e.kind === "repair" ? e.category : e.kind === "tires" ? e.size : e.notes;
+          const extra = e.kind === "visit"
+            ? [
+                e.maintenance && e.repair ? `Maintenance ${this._money(e.maintenance.cost)} · Repair ${this._money(e.repair.cost)}` : "",
+                e.notes || e.repair?.description || "",
+              ].filter(Boolean).join("\n")
+            : e.kind === "repair" ? (e.title !== e.category ? e.category : "")
+            : e.kind === "tires" ? e.size : e.notes;
           return `
             <div class="h-row">
               <span class="h-icon"><ha-icon icon="${icon[e.kind]}"></ha-icon></span>
@@ -545,67 +551,55 @@ class VehicleServiceDialog extends HTMLElement {
       .join("");
   }
 
-  _switchKind(kind) {
-    if (kind === this._kind) return;
-    // Carry shared fields over to the other form
-    const f = this.shadowRoot.getElementById("f");
-    const keep = {};
-    for (const name of ["date", "odometer", "shop", "cost"]) keep[name] = f.elements[name]?.value;
-    this._kind = kind;
-    this._render();
-    const g = this.shadowRoot.getElementById("f");
-    for (const [name, val] of Object.entries(keep)) if (val != null && g.elements[name]) g.elements[name].value = val;
-    this.shadowRoot.querySelector(`.seg button[data-kind="${kind}"]`)?.focus();
-  }
-
   _logForm(v) {
     const odo = v.odometer != null && !Number.isNaN(v.odometer) ? Math.round(v.odometer) : "";
-    const repair = this._kind === "repair";
     const services = [...v.services].sort((a, b) => a.label.localeCompare(b.label));
-    const seg = (kind, label) =>
-      `<button type="button" role="tab" data-kind="${kind}" aria-selected="${this._kind === kind}">${label}</button>`;
-
-    const body = repair
-      ? `
-        <label class="field"><span>Category</span>
-          <select name="category">
-            ${REPAIR_CATEGORIES.map(([k, l]) => `<option value="${k}">${esc(l)}</option>`).join("")}
-          </select>
-        </label>
-        <label class="field"><span>What was done</span>
-          <textarea name="description" rows="2" placeholder="e.g. Replaced both front lower control arm assemblies"></textarea>
-        </label>`
-      : `
-        <fieldset>
-          <legend>What was done</legend>
-          <div class="checks">
-            ${services.map((s) => `
-              <label class="check">
-                <input type="checkbox" name="services" value="${esc(s.id)}" ${this._preselect.has(s.id) ? "checked" : ""}>
-                <ha-icon icon="${esc(s.icon)}"></ha-icon><span>${esc(s.label)}</span>
-              </label>`).join("")}
-          </div>
-        </fieldset>`;
-
+    const chip = (name, value, icon, label, checked) => `
+      <label class="check">
+        <input type="checkbox" name="${name}" value="${esc(value)}" ${checked ? "checked" : ""}>
+        ${icon ? `<ha-icon icon="${esc(icon)}"></ha-icon>` : ""}<span>${esc(label)}</span>
+      </label>`;
     return `
-      <div class="seg" role="tablist" aria-label="Type of work">
-        ${seg("service", "Maintenance")}${seg("repair", "Repair")}
-      </div>
-      <div class="seg-hint muted">${repair
-        ? "One-off work outside the schedule. Counts toward cost totals; doesn't reset any reminders."
-        : "Scheduled items. Logging one resets its reminder."}</div>
       <form id="f" novalidate>
         <div class="grid2">
           <label class="field"><span>Date</span><input type="date" name="date" value="${todayIso()}" max="${todayIso()}" required></label>
           <label class="field"><span>Odometer (${esc(v.unit)})</span><input type="number" name="odometer" value="${odo}" min="0" step="1" inputmode="numeric" required></label>
         </div>
-        ${body}
-        <div class="grid2">
-          <label class="field"><span>Shop</span><input type="text" name="shop" placeholder="e.g. Valvoline, DIY" autocomplete="off"></label>
-          <label class="field"><span>Cost ($)</span><input type="number" name="cost" min="0" step="0.01" inputmode="decimal" placeholder="0.00"></label>
+        <fieldset>
+          <legend>Scheduled maintenance <span class="legend-hint">resets reminders</span></legend>
+          <div class="checks">
+            ${services.map((s) => chip("services", s.id, s.icon, s.label, this._preselect.has(s.id))).join("")}
+          </div>
+        </fieldset>
+        <fieldset>
+          <legend>Repairs <span class="legend-hint">one-off work</span></legend>
+          <div class="checks">
+            ${REPAIR_CATEGORIES.map(([k, l]) => chip("repairs", k, "", l, false)).join("")}
+          </div>
+        </fieldset>
+        <label class="field"><span>Details</span>
+          <textarea name="details" rows="2" placeholder="Optional, e.g. Replaced both front lower control arm assemblies"></textarea>
+        </label>
+        <label class="field"><span>Shop</span><input type="text" name="shop" placeholder="e.g. Valvoline, DIY" autocomplete="off"></label>
+        <div class="grid2 costs">
+          <label class="field" data-cost="maintenance"><span>Cost ($)</span><input type="number" name="maintenance_cost" min="0" step="0.01" inputmode="decimal" placeholder="0.00"></label>
+          <label class="field" data-cost="repair"><span>Repair cost ($)</span><input type="number" name="repair_cost" min="0" step="0.01" inputmode="decimal" placeholder="0.00"></label>
         </div>
-        ${repair ? "" : `<label class="field"><span>Notes</span><textarea name="notes" rows="2" placeholder="Optional"></textarea></label>`}
       </form>`;
+  }
+
+  /* Show one cost field, or a maintenance/repair split when both kinds are ticked */
+  _syncLogForm() {
+    const f = this.shadowRoot.getElementById("f");
+    if (!f) return;
+    const hasSvc = f.querySelectorAll('input[name="services"]:checked').length > 0;
+    const hasRep = f.querySelectorAll('input[name="repairs"]:checked').length > 0;
+    const both = hasSvc && hasRep;
+    const m = f.querySelector('[data-cost="maintenance"]');
+    const r = f.querySelector('[data-cost="repair"]');
+    m.querySelector("span").textContent = both ? "Maintenance cost ($)" : "Cost ($)";
+    r.hidden = !both;
+    f.querySelector(".costs").classList.toggle("single", !both);
   }
 
   async _save() {
@@ -613,39 +607,38 @@ class VehicleServiceDialog extends HTMLElement {
     const err = this.shadowRoot.getElementById("err");
     const save = this.shadowRoot.getElementById("save");
     const data = new FormData(f);
-    const repair = this._kind === "repair";
+    const services = data.getAll("services");
+    const repairs = data.getAll("repairs");
     const odometer = parseInt(data.get("odometer"), 10);
     const date = data.get("date");
-    const shop = (data.get("shop") || "").trim();
-    const cost = parseFloat(data.get("cost")) || 0;
+    const first = parseFloat(data.get("maintenance_cost")) || 0;
+    const second = parseFloat(data.get("repair_cost")) || 0;
 
     err.textContent = "";
+    if (!services.length && !repairs.length) return (err.textContent = "Select at least one item or repair.");
     if (!date) return (err.textContent = "Enter a date.");
     if (Number.isNaN(odometer) || odometer < 0) return (err.textContent = "Enter the odometer reading.");
 
-    let msg;
-    if (repair) {
-      const description = (data.get("description") || "").trim();
-      if (!description) return (err.textContent = "Describe what was done.");
-      msg = {
-        type: `${DOMAIN}/add_repair`, vehicle_id: this._card._vehicle.vid,
-        entry_date: date, odometer, category: data.get("category"), description, shop, cost,
-      };
-    } else {
-      const services = data.getAll("services");
-      if (!services.length) return (err.textContent = "Select at least one item.");
-      msg = {
-        type: `${DOMAIN}/add_service_entry`, vehicle_id: this._card._vehicle.vid,
-        entry_date: date, odometer, services, shop, cost, notes: (data.get("notes") || "").trim(),
-      };
-    }
-
+    // With only repairs ticked, the single cost field is the repair cost
+    const repairOnly = repairs.length && !services.length;
     save.disabled = true;
     save.textContent = "Saving…";
     try {
-      await this._card._hass.callWS(msg);
+      await this._card._hass.callWS({
+        type: `${DOMAIN}/log_visit`,
+        vehicle_id: this._card._vehicle.vid,
+        entry_date: date,
+        odometer,
+        services,
+        repair_categories: repairs,
+        details: (data.get("details") || "").trim(),
+        shop: (data.get("shop") || "").trim(),
+        maintenance_cost: repairOnly ? 0 : first,
+        repair_cost: repairOnly ? first : repairs.length ? second : 0,
+      });
+      const what = services.length && repairs.length ? "Maintenance and repairs" : repairs.length ? "Repair" : "Maintenance";
       this._card.dispatchEvent(new CustomEvent("hass-notification", {
-        bubbles: true, composed: true, detail: { message: repair ? "Repair logged" : "Maintenance logged" },
+        bubbles: true, composed: true, detail: { message: `${what} logged` },
       }));
       this._close();
     } catch (e) {
@@ -721,7 +714,6 @@ const DIALOG_CSS = `
   .seg button[aria-selected="true"] { background: var(--card-background-color, #fff); color: var(--primary-text-color);
                                       box-shadow: 0 1px 3px rgba(0,0,0,.15); }
   .seg button:focus-visible { outline: 2px solid var(--primary-color); outline-offset: 1px; }
-  .seg-hint { font-size: 12px; margin: 8px 2px 14px; }
   select { font: inherit; font-size: 15px; color: var(--primary-text-color); background: transparent;
            border: 1px solid var(--divider-color, rgba(127,127,127,.3)); border-radius: 10px; padding: 10px 12px; width: 100%;
            color-scheme: light dark; }
@@ -738,6 +730,11 @@ const DIALOG_CSS = `
   input:focus, textarea:focus { outline: 2px solid var(--primary-color); outline-offset: -1px; border-color: transparent; }
   fieldset { border: 0; padding: 0; margin: 0; }
   legend { font-size: 13px; color: var(--secondary-text-color); margin-bottom: 8px; padding: 0; }
+  .legend-hint { opacity: .75; margin-left: 4px; font-size: 12px; }
+  .costs.single { grid-template-columns: 1fr; }
+  .costs.single [data-cost="maintenance"] { max-width: calc(50% - 6px); }
+  @media (max-width: 420px) { .costs.single [data-cost="maintenance"] { max-width: none; } }
+  [hidden] { display: none !important; }
   .checks { display: flex; flex-wrap: wrap; gap: 8px; }
   .check { position: relative; display: inline-flex; align-items: center; gap: 6px; cursor: pointer; font-size: 14px;
            padding: 7px 12px 7px 10px; border-radius: 999px; border: 1px solid var(--divider-color, rgba(127,127,127,.3)); }

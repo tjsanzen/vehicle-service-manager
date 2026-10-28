@@ -133,11 +133,13 @@ add_repair:
           max: 9999999
           mode: box
           unit_of_measurement: mi
-    category:
-      name: Category
+    categories:
+      name: Categories
+      description: One or more areas the repair covered.
       required: true
       selector:
         select:
+          multiple: true
           options:
             - label: "Suspension / steering"
               value: suspension

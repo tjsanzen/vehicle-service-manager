@@ -9,6 +9,7 @@ Every mutation fires EVENT_DATA_UPDATED with the vehicle_id so entities refresh.
 from __future__ import annotations
 
 import logging
+import uuid
 from datetime import date
 from typing import Any
 
@@ -113,9 +114,9 @@ class VehicleServiceStore:
     @staticmethod
     def _service_entry(
         entry_date: str, odometer: int, services: list[str], notes: str = "",
-        shop: str = "", cost: float = 0, auto: bool = False,
+        shop: str = "", cost: float = 0, auto: bool = False, visit: str | None = None,
     ) -> dict[str, Any]:
-        return {
+        entry = {
             "date": entry_date,
             "odometer": int(odometer or 0),
             "services": list(services),
@@ -124,6 +125,9 @@ class VehicleServiceStore:
             "cost": _money(cost),
             "auto": auto,
         }
+        if visit:
+            entry["visit"] = visit   # links maintenance and repairs logged together
+        return entry
 
     async def async_add_service_entry(
         self,
@@ -154,7 +158,7 @@ class VehicleServiceStore:
             raise IndexError("Entry index out of range")
         history[entry_index] = self._service_entry(
             entry_date, odometer, services, notes, shop, cost,
-            history[entry_index].get("auto", False),
+            history[entry_index].get("auto", False), history[entry_index].get("visit"),
         )
         self._recalc_last_service(vehicle)
         self._bump_odometer(vehicle, int(odometer or 0))
@@ -185,6 +189,43 @@ class VehicleServiceStore:
                         "shop": entry.get("shop", ""),
                     }
         vehicle["lastService"] = last_service
+
+    async def async_log_visit(
+        self,
+        vehicle_id: str,
+        entry_date: str,
+        odometer: int,
+        services: list[str],
+        categories: list[str],
+        details: str = "",
+        shop: str = "",
+        maintenance_cost: float = 0,
+        repair_cost: float = 0,
+    ) -> dict[str, Any]:
+        """Scheduled maintenance and repairs from one shop visit, saved together."""
+        vehicle = self._require(vehicle_id)
+        visit = uuid.uuid4().hex[:12] if services and categories else None
+        result: dict[str, Any] = {}
+        if services:
+            entry = self._service_entry(
+                entry_date, odometer, services, details, shop, maintenance_cost, visit=visit
+            )
+            vehicle.setdefault("history", []).append(entry)
+            self._recalc_last_service(vehicle)
+            result["entry"] = entry
+        if categories:
+            repair = {
+                "date": entry_date, "odometer": int(odometer or 0),
+                "categories": list(categories), "category": categories[0],
+                "description": details or "", "shop": shop or "", "cost": _money(repair_cost),
+            }
+            if visit:
+                repair["visit"] = visit
+            vehicle.setdefault("repairs", []).append(repair)
+            result["repair"] = repair
+        self._bump_odometer(vehicle, int(odometer or 0))
+        await self._async_commit(vehicle_id)
+        return result
 
     # ── Repairs ───────────────────────────────────────────────────────────────
 

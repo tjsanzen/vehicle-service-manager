@@ -276,14 +276,23 @@ _ENTRY_FIELDS = {
     vol.Optional("shop", default=""): cv.string,
     vol.Optional("cost", default=0): _MONEY,
 }
+_REPAIR_IDS = vol.All(cv.ensure_list, [vol.In(list(REPAIR_CATEGORIES))])
 _REPAIR_FIELDS = {
     vol.Required("entry_date"): cv.string,
     vol.Required("odometer"): vol.Coerce(int),
-    vol.Required("category"): vol.In(list(REPAIR_CATEGORIES)),
+    # One or more categories; "category" (single) is still accepted
+    vol.Optional("categories"): _REPAIR_IDS,
+    vol.Optional("category"): vol.In(list(REPAIR_CATEGORIES)),
     vol.Optional("description", default=""): cv.string,
     vol.Optional("shop", default=""): cv.string,
     vol.Optional("cost", default=0): _MONEY,
 }
+
+
+def _has_category(data: dict[str, Any]) -> dict[str, Any]:
+    if not data.get("categories") and not data.get("category"):
+        raise vol.Invalid("Pick at least one repair category")
+    return data
 _TIRE_FIELDS = {
     vol.Required("entry_date"): cv.string,
     vol.Required("odometer"): vol.Coerce(int),
@@ -300,9 +309,11 @@ _TIRE_FIELDS = {
 
 
 def _repair_from(data: dict[str, Any]) -> dict[str, Any]:
+    categories = list(data.get("categories") or [data["category"]])
     return {
         "date": data["entry_date"], "odometer": data["odometer"],
-        "category": data["category"], "description": data.get("description", ""),
+        "categories": categories, "category": categories[0],
+        "description": data.get("description", ""),
         "shop": data.get("shop", ""), "cost": data.get("cost", 0),
     }
 
@@ -395,6 +406,9 @@ def _register_websocket(hass: HomeAssistant) -> None:
     async def ws_add_repair(hass, connection, msg):
         if _vehicle_or_error(connection, msg) is None:
             return
+        if not msg.get("categories") and not msg.get("category"):
+            connection.send_error(msg["id"], "invalid_format", "Pick at least one repair category")
+            return
         store = get_store(hass)
         await store.async_add_repair(msg["vehicle_id"], _repair_from(msg))
         connection.send_result(msg["id"], {"vehicle": store.get_vehicle(msg["vehicle_id"])})
@@ -407,6 +421,9 @@ def _register_websocket(hass: HomeAssistant) -> None:
     @websocket_api.async_response
     async def ws_update_repair(hass, connection, msg):
         if _vehicle_or_error(connection, msg) is None:
+            return
+        if not msg.get("categories") and not msg.get("category"):
+            connection.send_error(msg["id"], "invalid_format", "Pick at least one repair category")
             return
         store = get_store(hass)
         try:
@@ -470,6 +487,32 @@ def _register_websocket(hass: HomeAssistant) -> None:
         connection.send_result(msg["id"], {"success": True})
 
     @websocket_api.websocket_command({
+        vol.Required("type"): f"{DOMAIN}/log_visit",
+        vol.Required("vehicle_id"): str,
+        vol.Required("entry_date"): cv.string,
+        vol.Required("odometer"): vol.Coerce(int),
+        vol.Optional("services", default=[]): _SERVICE_IDS,
+        vol.Optional("repair_categories", default=[]): _REPAIR_IDS,
+        vol.Optional("details", default=""): cv.string,
+        vol.Optional("shop", default=""): cv.string,
+        vol.Optional("maintenance_cost", default=0): _MONEY,
+        vol.Optional("repair_cost", default=0): _MONEY,
+    })
+    @websocket_api.async_response
+    async def ws_log_visit(hass, connection, msg):
+        if _vehicle_or_error(connection, msg) is None:
+            return
+        if not msg["services"] and not msg["repair_categories"]:
+            connection.send_error(msg["id"], "invalid_format", "Select at least one item or repair")
+            return
+        result = await get_store(hass).async_log_visit(
+            vehicle_id=msg["vehicle_id"], entry_date=msg["entry_date"], odometer=msg["odometer"],
+            services=msg["services"], categories=msg["repair_categories"], details=msg["details"],
+            shop=msg["shop"], maintenance_cost=msg["maintenance_cost"], repair_cost=msg["repair_cost"],
+        )
+        connection.send_result(msg["id"], result)
+
+    @websocket_api.websocket_command({
         vol.Required("type"): f"{DOMAIN}/history",
         vol.Required("vehicle_id"): str,
     })
@@ -484,7 +527,7 @@ def _register_websocket(hass: HomeAssistant) -> None:
         })
 
     for fn in [
-        ws_get_vehicles, ws_history, ws_add_service_entry, ws_update_service_entry,
+        ws_get_vehicles, ws_history, ws_log_visit, ws_add_service_entry, ws_update_service_entry,
         ws_delete_service_entry, ws_add_repair, ws_update_repair, ws_delete_repair,
         ws_add_tire, ws_delete_tire, ws_update_odometer,
     ]:
@@ -500,13 +543,16 @@ def _history_entries(vehicle: dict[str, Any]) -> list[dict[str, Any]]:
             "title": ", ".join(SERVICE_LABELS.get(s, s) for s in e.get("services", [])),
             "services": e.get("services", []), "notes": e.get("notes", ""),
             "shop": e.get("shop", ""), "cost": e.get("cost", 0), "auto": e.get("auto", False),
+            "visit": e.get("visit"),
         })
     for i, r in enumerate(vehicle.get("repairs", [])):
+        cats = ", ".join(
+            REPAIR_CATEGORIES.get(c, c) for c in (r.get("categories") or [r.get("category")]) if c
+        )
         entries.append({
             "kind": "repair", "index": i, "date": r.get("date"), "odometer": r.get("odometer"),
-            "title": r.get("description") or REPAIR_CATEGORIES.get(r.get("category"), "Repair"),
-            "category": REPAIR_CATEGORIES.get(r.get("category"), r.get("category")),
-            "shop": r.get("shop", ""), "cost": r.get("cost", 0),
+            "title": r.get("description") or cats or "Repair", "category": cats,
+            "shop": r.get("shop", ""), "cost": r.get("cost", 0), "visit": r.get("visit"),
         })
     for i, t in enumerate(vehicle.get("tires", [])):
         name = " ".join(p for p in (t.get("brand"), t.get("model")) if p)
@@ -515,8 +561,39 @@ def _history_entries(vehicle: dict[str, Any]) -> list[dict[str, Any]]:
             "title": f"Tires{': ' + name if name else ''}", "size": t.get("size", ""),
             "shop": t.get("shop", ""), "cost": t.get("cost", 0),
         })
+    entries = _merge_visits(entries)
     entries.sort(key=lambda x: (x.get("date") or "", x.get("odometer") or 0), reverse=True)
     return entries
+
+
+def _merge_visits(entries: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """Show maintenance + repairs logged together as one row."""
+    by_visit: dict[str, dict[str, Any]] = {}
+    merged: list[dict[str, Any]] = []
+    for e in entries:
+        visit = e.get("visit")
+        if not visit:
+            merged.append(e)
+            continue
+        if visit not in by_visit:
+            by_visit[visit] = {
+                "kind": "visit", "visit": visit, "date": e["date"], "odometer": e["odometer"],
+                "shop": e.get("shop", ""), "cost": 0.0,
+                "maintenance": None, "repair": None,
+            }
+            merged.append(by_visit[visit])
+        v = by_visit[visit]
+        v["cost"] = round(v["cost"] + (e.get("cost") or 0), 2)
+        if e["kind"] == "service":
+            v["maintenance"] = {"title": e["title"], "cost": e.get("cost", 0), "index": e["index"]}
+            v["notes"] = e.get("notes", "")
+        else:
+            v["repair"] = {"title": e["category"], "cost": e.get("cost", 0), "index": e["index"],
+                           "description": e.get("title") if e.get("title") != e["category"] else ""}
+    for v in by_visit.values():
+        parts = [p["title"] for p in (v["maintenance"], v["repair"]) if p]
+        v["title"] = " + ".join(parts)
+    return merged
 
 
 # ── HA actions (for automations / scripts) ────────────────────────────────────
@@ -565,7 +642,7 @@ def _register_services(hass: HomeAssistant) -> None:
     )
     hass.services.async_register(
         DOMAIN, HA_SERVICE_ADD_REPAIR, handle_add_repair,
-        schema=vol.Schema({**vid, **_REPAIR_FIELDS}),
+        schema=vol.All(vol.Schema({**vid, **_REPAIR_FIELDS}), _has_category),
     )
     hass.services.async_register(
         DOMAIN, HA_SERVICE_ADD_TIRE, handle_add_tire,
