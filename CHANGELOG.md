@@ -16,6 +16,8 @@ US edition. Not compatible with vehicles created by 1.x; delete and re-add them.
 ### Added
 - Integration icon in `brand/` (shown by Home Assistant 2026.3+), light and dark
 - History & costs tab in the card: total spent to date with breakdown, and every service, repair and tire entry grouped by year (`vehicle_service/history` WebSocket command)
+- Fill-up card (`custom:vehicle-fill-up-card`): log odometer, gallons and cost; updates mileage; Gas spend (30 days) sensor with mpg; "Gas (30 days)" on the vehicle card; `add_fuel` action. Fill-ups stay out of maintenance history and costs
+- Card pop-ups open as a bottom sheet on phones, sized to the visible screen with the header and buttons always visible; more compact card and pop-ups on desktop; repairs collapsed in the log form until needed
 - One log form per shop visit: scheduled items and multiple repair areas together, with split maintenance/repair cost; shown as one entry in History (`vehicle_service/log_visit`)
 - Repairs take multiple categories (`categories`; `category` still accepted); more repair categories
 - Dashboard card (`custom:vehicle-service-card`), bundled and auto-registered: photo, mileage, upcoming maintenance, all-maintenance view and a log form

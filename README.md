@@ -102,6 +102,24 @@ max_items: 3                 # optional
 
 For the photo, put a landscape image in `/config/www/cars/` and reference it as `/local/cars/<file>`.
 
+## Fill-up card
+
+A small button for logging gas, handy if your car doesn't report its odometer to Home Assistant. Add card → **Vehicle Fill Up**. Tap it to enter the odometer, gallons and total cost (date defaults to today). With more than one vehicle you pick which one, or set `device:` to tie the button to a single car.
+
+Each fill-up:
+- updates the vehicle's odometer, so mileage-based reminders stay current
+- feeds the **Gas spend (30 days)** sensor (attributes: gallons, fill-ups, average price per gallon, recent mpg)
+- shows as "Gas (30 days)" on the vehicle card
+
+Fill-ups are kept separate from maintenance: they don't appear in History and don't count toward the maintenance cost sensors. MPG assumes you fill the tank each time.
+
+```yaml
+type: custom:vehicle-fill-up-card
+device: 1a2b3c...   # optional
+```
+
+From an automation: `action: vehicle_service.add_fuel` with `vehicle_id`, `odometer`, `gallons`, `cost` (and optional `entry_date`).
+
 ## Entities
 
 For a vehicle named "Toyota Camry":
@@ -116,6 +134,7 @@ For a vehicle named "Toyota Camry":
 | `sensor.toyota_camry_cost_this_year` | spend this calendar year |
 | `sensor.toyota_camry_cost_last_12_months` | rolling 12-month spend |
 | `sensor.toyota_camry_cost_per_mile` | spend since the car was added ÷ miles since |
+| `sensor.toyota_camry_gas_spend_30_days` | gas spend over the last 30 days (separate from maintenance) |
 | `sensor.toyota_camry_tire_tread_left_front` (×4) | projected tread, 32nds |
 
 Service sensors carry `percentage`, `action` (`replace`/`inspect`), `note`, `miles_left`, `months_left`, `next_due_odometer`, `next_due_date`, `last_service_date`, `last_service_odometer`, `last_service_cost`, `last_service_shop`, `interval_miles` and `interval_months`.

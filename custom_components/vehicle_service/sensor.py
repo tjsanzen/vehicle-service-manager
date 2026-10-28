@@ -20,7 +20,7 @@ from .const import (
 )
 from .entity import VehicleEntity
 from .helpers import service_progress
-from .store import VehicleServiceStore, cost_summary, get_store
+from .store import VehicleServiceStore, cost_summary, fuel_summary, get_store
 
 SCAN_INTERVAL = timedelta(hours=1)
 
@@ -50,6 +50,7 @@ async def async_setup_entry(
         CostSensor(store, vehicle_id, "ytd", "Cost this year", currency),
         CostSensor(store, vehicle_id, "last_12_months", "Cost last 12 months", currency),
         CostPerMileSensor(store, vehicle_id, currency),
+        FuelSpendSensor(store, vehicle_id, currency),
     ]
     entities += [TireTreadSensor(store, vehicle_id, pos) for pos in TIRE_POSITIONS]
 
@@ -154,6 +155,25 @@ class CostPerMileSensor(VehicleEntity, SensorEntity):
             "miles_tracked": summary["miles_tracked"],
             "start_odometer": vehicle.get("startOdometer"),
         }
+
+
+class FuelSpendSensor(VehicleEntity, SensorEntity):
+    """Gas spend over the last 30 days (separate from maintenance costs)."""
+
+    _attr_device_class = SensorDeviceClass.MONETARY
+    _attr_suggested_display_precision = 2
+    _attr_icon = "mdi:gas-station"
+    _attr_name = "Gas spend (30 days)"
+
+    def __init__(self, store: VehicleServiceStore, vehicle_id: str, currency: str) -> None:
+        super().__init__(store, vehicle_id)
+        self._attr_unique_id = f"{vehicle_id}_fuel_30d"
+        self._attr_native_unit_of_measurement = currency
+
+    def _refresh(self, vehicle: dict[str, Any]) -> None:
+        summary = fuel_summary(vehicle)
+        self._attr_native_value = summary["cost"]
+        self._attr_extra_state_attributes = {"vehicle_id": self._vehicle_id, **summary}
 
 
 # ── Tires ─────────────────────────────────────────────────────────────────────

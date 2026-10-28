@@ -10,7 +10,7 @@ from __future__ import annotations
 
 import logging
 import uuid
-from datetime import date
+from datetime import date, timedelta
 from typing import Any
 
 from homeassistant.core import HomeAssistant
@@ -257,6 +257,30 @@ class VehicleServiceStore:
             repairs.pop(repair_index)
         await self._async_commit(vehicle_id)
 
+    # ── Fuel ──────────────────────────────────────────────────────────────────
+    # Stored under "fillUps" ("fuel" is the vehicle's fuel type). Kept apart from
+    # maintenance: not in history or maintenance cost totals.
+
+    async def async_add_fuel(self, vehicle_id: str, fill: dict[str, Any]) -> dict[str, Any]:
+        vehicle = self._require(vehicle_id)
+        fill = {
+            "date": fill["date"],
+            "odometer": int(fill.get("odometer") or 0),
+            "gallons": round(float(fill.get("gallons") or 0), 3),
+            "cost": _money(fill.get("cost")),
+        }
+        vehicle.setdefault("fillUps", []).append(fill)
+        self._bump_odometer(vehicle, fill["odometer"])
+        await self._async_commit(vehicle_id)
+        return fill
+
+    async def async_delete_fuel(self, vehicle_id: str, fuel_index: int) -> None:
+        vehicle = self._require(vehicle_id)
+        fills = vehicle.get("fillUps", [])
+        if 0 <= fuel_index < len(fills):
+            fills.pop(fuel_index)
+        await self._async_commit(vehicle_id)
+
     # ── Tires ─────────────────────────────────────────────────────────────────
 
     def get_tires(self, vehicle_id: str) -> list[dict[str, Any]]:
@@ -324,4 +348,37 @@ def cost_summary(vehicle: dict[str, Any], today: date | None = None) -> dict[str
         "miles_tracked": max(miles, 0),
         "by_category": {k: round(v, 2) for k, v in by_category.items()},
         "by_year": {k: round(v, 2) for k, v in sorted(by_year.items())},
+    }
+
+
+def fuel_summary(vehicle: dict[str, Any], today: date | None = None, days: int = 30) -> dict[str, Any]:
+    """Fuel spend over the last `days`, plus recent fuel economy.
+
+    MPG assumes each fill-up fills the tank: miles since the previous fill-up
+    divided by the gallons pumped now, over the last few fill-ups.
+    """
+    today = today or date.today()
+    since = (today - timedelta(days=days)).isoformat()
+    fills = sorted(vehicle.get("fillUps", []), key=lambda f: (f.get("date") or "", f.get("odometer") or 0))
+    recent = [f for f in fills if (f.get("date") or "") >= since]
+    cost = round(sum(_money(f.get("cost")) for f in recent), 2)
+    gallons = round(sum(float(f.get("gallons") or 0) for f in recent), 3)
+
+    by_odo = sorted((f for f in fills if f.get("odometer")), key=lambda f: f["odometer"])
+    pairs = list(zip(by_odo, by_odo[1:]))[-5:]
+    miles = sum(b["odometer"] - a["odometer"] for a, b in pairs)
+    pair_gallons = sum(float(b.get("gallons") or 0) for _, b in pairs)
+    mpg = round(miles / pair_gallons, 1) if miles > 0 and pair_gallons > 0 else None
+
+    last = fills[-1] if fills else None
+    return {
+        "cost": cost,
+        "gallons": gallons,
+        "fill_ups": len(recent),
+        "avg_price_per_gallon": round(cost / gallons, 3) if gallons else None,
+        "mpg": mpg,
+        "fill_ups_total": len(fills),
+        "last_fill_date": last.get("date") if last else None,
+        "last_fill_cost": last.get("cost") if last else None,
+        "days": days,
     }

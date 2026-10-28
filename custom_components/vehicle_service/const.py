@@ -153,6 +153,7 @@ HA_SERVICE_ADD_ENTRY = "add_service_entry"
 HA_SERVICE_UPDATE_ODOMETER = "update_odometer"
 HA_SERVICE_ADD_REPAIR = "add_repair"
 HA_SERVICE_ADD_TIRE = "add_tire"
+HA_SERVICE_ADD_FUEL = "add_fuel"
 
 # Events
 EVENT_DATA_UPDATED = f"{DOMAIN}_data_updated"

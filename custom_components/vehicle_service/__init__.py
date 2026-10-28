@@ -16,6 +16,7 @@ from homeassistant.core import Event, HomeAssistant, ServiceCall, callback
 from homeassistant.exceptions import ServiceValidationError
 from homeassistant.helpers.event import async_track_state_change_event
 import homeassistant.helpers.config_validation as cv
+from homeassistant.util import dt as dt_util
 from homeassistant.helpers import entity_registry as er
 from homeassistant.helpers.typing import ConfigType
 
@@ -28,7 +29,7 @@ from .const import (
     ALL_SERVICE_IDS, REPAIR_CATEGORIES, TIRE_POSITIONS, SERVICE_LABELS,
     SERVICE_STATE_INSPECTION, SERVICE_REGISTRATION,
     HA_SERVICE_ADD_ENTRY, HA_SERVICE_UPDATE_ODOMETER,
-    HA_SERVICE_ADD_REPAIR, HA_SERVICE_ADD_TIRE,
+    HA_SERVICE_ADD_REPAIR, HA_SERVICE_ADD_TIRE, HA_SERVICE_ADD_FUEL,
 )
 from .helpers import add_months, parse_date
 from .store import cost_summary, get_store, VehicleServiceStore
@@ -197,6 +198,7 @@ def _build_initial_vehicle(data: dict[str, Any]) -> dict[str, Any]:
         "history":       [],
         "repairs":       [],
         "tires":         [],
+        "fillUps":       [],
     }
 
 
@@ -306,6 +308,21 @@ _TIRE_FIELDS = {
     vol.Optional("cost", default=0): _MONEY,
     **{vol.Optional(pos, default=0.0): _TREAD for pos in TIRE_POSITIONS},
 }
+
+
+_FUEL_FIELDS = {
+    vol.Optional("entry_date"): cv.string,     # defaults to today
+    vol.Required("odometer"): vol.All(vol.Coerce(int), vol.Range(min=0)),
+    vol.Required("gallons"): vol.All(vol.Coerce(float), vol.Range(min=0.01, max=500)),
+    vol.Required("cost"): _MONEY,
+}
+
+
+def _fuel_from(data: dict[str, Any]) -> dict[str, Any]:
+    return {
+        "date": data.get("entry_date") or dt_util.now().date().isoformat(),
+        "odometer": data["odometer"], "gallons": data["gallons"], "cost": data["cost"],
+    }
 
 
 def _repair_from(data: dict[str, Any]) -> dict[str, Any]:
@@ -513,6 +530,29 @@ def _register_websocket(hass: HomeAssistant) -> None:
         connection.send_result(msg["id"], result)
 
     @websocket_api.websocket_command({
+        vol.Required("type"): f"{DOMAIN}/add_fuel",
+        vol.Required("vehicle_id"): str, **_FUEL_FIELDS,
+    })
+    @websocket_api.async_response
+    async def ws_add_fuel(hass, connection, msg):
+        if _vehicle_or_error(connection, msg) is None:
+            return
+        fill = await get_store(hass).async_add_fuel(msg["vehicle_id"], _fuel_from(msg))
+        connection.send_result(msg["id"], {"fill": fill})
+
+    @websocket_api.websocket_command({
+        vol.Required("type"): f"{DOMAIN}/delete_fuel",
+        vol.Required("vehicle_id"): str,
+        vol.Required("fuel_index"): vol.Coerce(int),
+    })
+    @websocket_api.async_response
+    async def ws_delete_fuel(hass, connection, msg):
+        if _vehicle_or_error(connection, msg) is None:
+            return
+        await get_store(hass).async_delete_fuel(msg["vehicle_id"], msg["fuel_index"])
+        connection.send_result(msg["id"], {"success": True})
+
+    @websocket_api.websocket_command({
         vol.Required("type"): f"{DOMAIN}/history",
         vol.Required("vehicle_id"): str,
     })
@@ -527,7 +567,7 @@ def _register_websocket(hass: HomeAssistant) -> None:
         })
 
     for fn in [
-        ws_get_vehicles, ws_history, ws_log_visit, ws_add_service_entry, ws_update_service_entry,
+        ws_get_vehicles, ws_history, ws_log_visit, ws_add_fuel, ws_delete_fuel, ws_add_service_entry, ws_update_service_entry,
         ws_delete_service_entry, ws_add_repair, ws_update_repair, ws_delete_repair,
         ws_add_tire, ws_delete_tire, ws_update_odometer,
     ]:
@@ -643,6 +683,14 @@ def _register_services(hass: HomeAssistant) -> None:
     hass.services.async_register(
         DOMAIN, HA_SERVICE_ADD_REPAIR, handle_add_repair,
         schema=vol.All(vol.Schema({**vid, **_REPAIR_FIELDS}), _has_category),
+    )
+    async def handle_add_fuel(call: ServiceCall) -> None:
+        _check(call.data["vehicle_id"])
+        await get_store(hass).async_add_fuel(call.data["vehicle_id"], _fuel_from(call.data))
+
+    hass.services.async_register(
+        DOMAIN, HA_SERVICE_ADD_FUEL, handle_add_fuel,
+        schema=vol.Schema({**vid, **_FUEL_FIELDS}),
     )
     hass.services.async_register(
         DOMAIN, HA_SERVICE_ADD_TIRE, handle_add_tire,

@@ -8,6 +8,10 @@
  * upcoming_miles: 500            # optional
  * upcoming_months: 1             # optional
  * max_items: 3                   # optional
+ *
+ * type: custom:vehicle-fill-up-card
+ * device: <device id>            # optional; omit to choose the vehicle each time
+ * name: Fill up                  # optional
  */
 
 const CARD_VERSION = "2.0.0";
@@ -119,7 +123,42 @@ function readVehicle(hass, config) {
     odometer: odometer ? Number(odometer.state) : null,
     unit: odometer?.attributes?.unit_of_measurement || "mi",
     services,
+    fuel: fuelFrom(states.find((s) => s.attributes.fill_ups_total !== undefined)),
   };
+}
+
+function fuelFrom(st) {
+  if (!st) return null;
+  const a = st.attributes;
+  return {
+    cost: Number(st.state) || 0,
+    currency: a.unit_of_measurement || "USD",
+    fillUps: a.fill_ups || 0,
+    total: a.fill_ups_total || 0,
+    mpg: a.mpg,
+    lastDate: a.last_fill_date,
+    days: a.days || 30,
+  };
+}
+
+/* Every vehicle set up in the integration, for the fill-up form */
+function allVehicles(hass) {
+  const ids = new Set();
+  for (const st of Object.values(hass.states)) {
+    const a = st.attributes || {};
+    if (a.vehicle_id && a.device_class === "distance" && st.entity_id.startsWith("sensor.")) ids.add(a.vehicle_id);
+  }
+  return [...ids].map((vid) => readVehicle(hass, { vehicle_id: vid })).filter(Boolean)
+    .sort((a, b) => a.name.localeCompare(b.name));
+}
+
+function money(hass, n, currency) {
+  const cur = currency || hass?.config?.currency || "USD";
+  try {
+    return new Intl.NumberFormat(undefined, { style: "currency", currency: cur }).format(Number(n) || 0);
+  } catch (e) {
+    return `$${(Number(n) || 0).toFixed(2)}`;
+  }
 }
 
 function urgency(svc, cfg) {
@@ -155,11 +194,11 @@ function dueText(svc, cfg, unit) {
 /* ── Shared styles ────────────────────────────────────────────────────────── */
 
 const BASE_CSS = `
-  :host { --vsc-radius: 12px; --vsc-gap: 16px; }
+  :host { --vsc-radius: 10px; --vsc-gap: 14px; }
   * { box-sizing: border-box; }
   .btn {
     font: inherit; font-weight: 500; font-size: 14px; cursor: pointer;
-    border-radius: 999px; padding: 10px 16px; min-height: 40px;
+    border-radius: 999px; padding: 8px 14px; min-height: 36px;
     border: 1px solid var(--divider-color, rgba(127,127,127,.3));
     background: transparent; color: var(--primary-text-color);
     display: inline-flex; align-items: center; justify-content: center; gap: 8px;
@@ -283,10 +322,19 @@ class VehicleServiceCard extends HTMLElement {
         <div class="body">
           <div class="name">${esc(vehicle.name)}</div>
           ${image}
-          <div class="odo">
-            <span class="odo-value">${odo}</span><span class="odo-unit">${esc(vehicle.unit)}</span>
+          <div class="odo-row">
+            <div>
+              <div class="odo">
+                <span class="odo-value">${odo}</span><span class="odo-unit">${esc(vehicle.unit)}</span>
+              </div>
+              <div class="odo-label muted">Current mileage</div>
+            </div>
+            ${vehicle.fuel && vehicle.fuel.total ? `
+            <div class="gas" title="${vehicle.fuel.fillUps} fill-up${vehicle.fuel.fillUps === 1 ? "" : "s"} in the last ${vehicle.fuel.days} days${vehicle.fuel.mpg ? ` · about ${vehicle.fuel.mpg} mpg` : ""}">
+              <div class="gas-value">${money(this._hass, vehicle.fuel.cost, vehicle.fuel.currency)}</div>
+              <div class="odo-label muted">Gas (${vehicle.fuel.days} days)</div>
+            </div>` : ""}
           </div>
-          <div class="odo-label muted">Current mileage</div>
 
           <div class="section-title">Upcoming maintenance</div>
           <div class="list">${rows}</div>
@@ -319,26 +367,29 @@ class VehicleServiceCard extends HTMLElement {
 const CARD_CSS = `
   ha-card { overflow: hidden; }
   .body { padding: var(--vsc-gap); display: flex; flex-direction: column; container-type: inline-size; }
-  .name { font-size: 20px; font-weight: 600; line-height: 1.3; margin-bottom: 12px; color: var(--primary-text-color); }
+  .name { font-size: 18px; font-weight: 600; line-height: 1.3; margin-bottom: 10px; color: var(--primary-text-color); }
   .photo {
-    width: 100%; aspect-ratio: 16 / 9; object-fit: cover; display: block;
+    width: 100%; aspect-ratio: 2 / 1; object-fit: cover; display: block;
     border-radius: var(--vsc-radius);
     background: var(--secondary-background-color, rgba(127,127,127,.08));
   }
   .placeholder { display: flex; align-items: center; justify-content: center; color: var(--secondary-text-color); }
-  .placeholder ha-icon { --mdc-icon-size: 64px; opacity: .45; }
-  .odo { margin-top: 16px; display: flex; align-items: baseline; gap: 6px; color: var(--primary-text-color); }
-  .odo-value { font-size: 32px; font-weight: 600; line-height: 1.1; font-variant-numeric: tabular-nums; letter-spacing: -.01em; }
-  .odo-unit { font-size: 16px; color: var(--secondary-text-color); }
-  .odo-label { font-size: 13px; margin-top: 2px; }
+  .placeholder ha-icon { --mdc-icon-size: 48px; opacity: .45; }
+  .odo-row { margin-top: 12px; display: flex; align-items: flex-end; justify-content: space-between; gap: 12px; }
+  .gas { text-align: right; }
+  .gas-value { font-size: 17px; font-weight: 600; font-variant-numeric: tabular-nums; color: var(--primary-text-color); line-height: 1.2; }
+  .odo { display: flex; align-items: baseline; gap: 6px; color: var(--primary-text-color); }
+  .odo-value { font-size: 26px; font-weight: 600; line-height: 1.1; font-variant-numeric: tabular-nums; letter-spacing: -.01em; }
+  .odo-unit { font-size: 14px; color: var(--secondary-text-color); }
+  .odo-label { font-size: 12px; margin-top: 1px; }
   .section-title {
-    margin-top: 20px; margin-bottom: 4px; font-size: 13px; font-weight: 600;
+    margin-top: 14px; margin-bottom: 2px; font-size: 12px; font-weight: 600;
     text-transform: uppercase; letter-spacing: .06em; color: var(--secondary-text-color);
   }
   .list { display: flex; flex-direction: column; }
   .row {
     all: unset; box-sizing: border-box; cursor: pointer; width: 100%;
-    display: flex; align-items: center; gap: 12px; padding: 10px 8px; margin: 0 -8px; width: calc(100% + 16px);
+    display: flex; align-items: center; gap: 12px; padding: 8px 8px; margin: 0 -8px; width: calc(100% + 16px);
     border-radius: 10px; color: var(--primary-text-color);
   }
   .row { position: relative; }
@@ -347,17 +398,17 @@ const CARD_CSS = `
   .row:focus-visible { outline: 2px solid var(--primary-color); outline-offset: -2px; }
   .row-icon { display: flex; flex: none; color: var(--secondary-text-color); }
   .row-main { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
-  .row-label { font-size: 15px; font-weight: 500; }
-  .row-sub { font-size: 13px; font-variant-numeric: tabular-nums; }
+  .row-label { font-size: 14px; font-weight: 500; }
+  .row-sub { font-size: 12px; font-variant-numeric: tabular-nums; }
   .row-sub.overdue { color: var(--error-color, #db4437); font-weight: 500; }
   .tag {
     font-size: 11px; font-weight: 500; padding: 1px 6px; border-radius: 6px; margin-left: 4px; vertical-align: 1px;
     background: var(--secondary-background-color, rgba(127,127,127,.12)); color: var(--secondary-text-color);
   }
-  .more { font-size: 13px; padding: 6px 0 0; }
-  .allgood { display: flex; align-items: center; gap: 10px; padding: 10px 0; color: var(--secondary-text-color); font-size: 14px; }
+  .more { font-size: 12px; padding: 4px 0 0; }
+  .allgood { display: flex; align-items: center; gap: 10px; padding: 8px 0; color: var(--secondary-text-color); font-size: 13px; }
   .allgood ha-icon { color: var(--success-color, #43a047); flex: none; }
-  .actions { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-top: 16px; }
+  .actions { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-top: 12px; }
   .empty { color: var(--secondary-text-color); padding: 8px 0; }
   @container (max-width: 340px) { .actions { grid-template-columns: 1fr; } }
 `;
@@ -375,6 +426,8 @@ class VehicleServiceDialog extends HTMLElement {
 
   connectedCallback() {
     this.attachShadow({ mode: "open" });
+    this._prevOverflow = document.documentElement.style.overflow;
+    document.documentElement.style.overflow = "hidden";
     this._render();
     this._onKey = (e) => e.key === "Escape" && this._close();
     document.addEventListener("keydown", this._onKey);
@@ -382,6 +435,7 @@ class VehicleServiceDialog extends HTMLElement {
 
   disconnectedCallback() {
     document.removeEventListener("keydown", this._onKey);
+    document.documentElement.style.overflow = this._prevOverflow || "";
   }
 
   _close() {
@@ -395,6 +449,7 @@ class VehicleServiceDialog extends HTMLElement {
       <style>${BASE_CSS}${DIALOG_CSS}</style>
       <div class="scrim" part="scrim"></div>
       <div class="dialog" role="dialog" aria-modal="true" aria-labelledby="t">
+        <div class="handle" aria-hidden="true"></div>
         <header>
           <div>
             <div class="title" id="t">${isLog ? "Log maintenance" : "All maintenance"}</div>
@@ -571,12 +626,12 @@ class VehicleServiceDialog extends HTMLElement {
             ${services.map((s) => chip("services", s.id, s.icon, s.label, this._preselect.has(s.id))).join("")}
           </div>
         </fieldset>
-        <fieldset>
-          <legend>Repairs <span class="legend-hint">one-off work</span></legend>
+        <details class="repairs">
+          <summary><ha-icon icon="mdi:tools"></ha-icon><span>Repairs <span class="legend-hint">one-off work</span></span><span class="rep-count"></span><ha-icon class="chev" icon="mdi:chevron-down"></ha-icon></summary>
           <div class="checks">
             ${REPAIR_CATEGORIES.map(([k, l]) => chip("repairs", k, "", l, false)).join("")}
           </div>
-        </fieldset>
+        </details>
         <label class="field"><span>Details</span>
           <textarea name="details" rows="2" placeholder="Optional, e.g. Replaced both front lower control arm assemblies"></textarea>
         </label>
@@ -600,6 +655,8 @@ class VehicleServiceDialog extends HTMLElement {
     m.querySelector("span").textContent = both ? "Maintenance cost ($)" : "Cost ($)";
     r.hidden = !both;
     f.querySelector(".costs").classList.toggle("single", !both);
+    const n = f.querySelectorAll('input[name="repairs"]:checked').length;
+    f.querySelector(".rep-count").textContent = n ? `${n} selected` : "";
   }
 
   async _save() {
@@ -649,29 +706,235 @@ class VehicleServiceDialog extends HTMLElement {
   }
 }
 
+/* ── Fill-up card ──────────────────────────────────────────────────────────── */
+
+class VehicleFillUpCard extends HTMLElement {
+  static getConfigForm() {
+    return {
+      schema: [
+        { name: "device", selector: { device: { filter: { integration: DOMAIN } } } },
+        { name: "name", selector: { text: {} } },
+      ],
+      computeLabel: (s) => ({ device: "Vehicle (optional; leave empty to choose each time)", name: "Label (optional)" })[s.name],
+    };
+  }
+
+  static getStubConfig() {
+    return {};
+  }
+
+  setConfig(config) {
+    this._config = { ...config };
+    this._sig = null;
+    this._render();
+  }
+
+  set hass(hass) {
+    this._hass = hass;
+    this._render();
+  }
+
+  getCardSize() {
+    return 1;
+  }
+
+  getGridOptions() {
+    return { columns: 6, rows: 1, min_columns: 3, min_rows: 1 };
+  }
+
+  _vehicles() {
+    const all = allVehicles(this._hass);
+    if (!this._config.device) return all;
+    const vid = vehicleIdFor(this._hass, this._config);
+    return all.filter((v) => v.vid === vid);
+  }
+
+  _render() {
+    if (!this._config || !this._hass) return;
+    const vehicles = this._vehicles();
+    const one = vehicles.length === 1 ? vehicles[0] : null;
+    let sub = vehicles.length ? "Log gas and mileage" : "No vehicles set up";
+    if (one) {
+      const last = one.fuel?.lastDate ? ` · last ${fmtDate(one.fuel.lastDate)}` : "";
+      sub = `${one.name}${last}`;
+    }
+    const sig = JSON.stringify([this._config, sub, vehicles.length]);
+    if (sig === this._sig) return;
+    this._sig = sig;
+    if (!this.shadowRoot) this.attachShadow({ mode: "open" });
+    this.shadowRoot.innerHTML = `
+      <style>${BASE_CSS}${FILL_CSS}</style>
+      <ha-card>
+        <button class="tile" ${vehicles.length ? "" : "disabled"} aria-label="${esc(this._config.name || "Fill up")}: ${esc(sub)}">
+          <span class="icon"><ha-icon icon="mdi:gas-station"></ha-icon></span>
+          <span class="text">
+            <span class="title">${esc(this._config.name || "Fill up")}</span>
+            <span class="sub muted">${esc(sub)}</span>
+          </span>
+        </button>
+      </ha-card>`;
+    this.shadowRoot.querySelector(".tile").addEventListener("click", () => {
+      const dlg = document.createElement("vehicle-fill-up-dialog");
+      dlg.setup({ card: this, vehicles: this._vehicles() });
+      document.body.appendChild(dlg);
+    });
+  }
+}
+
+const FILL_CSS = `
+  ha-card { overflow: hidden; height: 100%; }
+  .tile { all: unset; box-sizing: border-box; cursor: pointer; width: 100%; height: 100%; min-height: 56px;
+          display: flex; align-items: center; gap: 12px; padding: 10px 12px; }
+  .tile:hover { background: var(--secondary-background-color, rgba(127,127,127,.06)); }
+  .tile:focus-visible { outline: 2px solid var(--primary-color); outline-offset: -2px; border-radius: var(--ha-card-border-radius, 12px); }
+  .tile[disabled] { cursor: default; opacity: .6; }
+  .icon { width: 36px; height: 36px; border-radius: 50%; flex: none; display: flex; align-items: center; justify-content: center;
+          color: var(--primary-color); position: relative; }
+  .icon::before { content: ""; position: absolute; inset: 0; border-radius: 50%; background: var(--primary-color); opacity: .15; }
+  .text { display: flex; flex-direction: column; min-width: 0; }
+  .title { font-size: 14px; font-weight: 600; color: var(--primary-text-color); }
+  .sub { font-size: 12px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+`;
+
+class VehicleFillUpDialog extends VehicleServiceDialog {
+  setup({ card, vehicles }) {
+    this._card = card;
+    this._vehicles = vehicles;
+    const preset = card._config.device ? vehicleIdFor(card._hass, card._config) : null;
+    this._vid = (vehicles.find((v) => v.vid === preset) || vehicles[0])?.vid;
+  }
+
+  get _vehicle() {
+    return this._vehicles.find((v) => v.vid === this._vid);
+  }
+
+  _render() {
+    const v = this._vehicle;
+    const many = this._vehicles.length > 1;
+    const odo = v?.odometer != null && !Number.isNaN(v.odometer) ? Math.round(v.odometer) : "";
+    this.shadowRoot.innerHTML = `
+      <style>${BASE_CSS}${DIALOG_CSS}</style>
+      <div class="scrim"></div>
+      <div class="dialog narrow" role="dialog" aria-modal="true" aria-labelledby="t">
+        <div class="handle" aria-hidden="true"></div>
+        <header>
+          <div>
+            <div class="title" id="t">Fill up</div>
+            <div class="subtitle muted">${many ? "Log gas and update mileage" : esc(v?.name || "")}</div>
+          </div>
+          <button class="icon-btn" id="x" aria-label="Close"><ha-icon icon="mdi:close"></ha-icon></button>
+        </header>
+        <div class="content">
+          <form id="f" novalidate>
+            ${many ? `<label class="field"><span>Vehicle</span>
+              <select name="vehicle">${this._vehicles.map((x) => `<option value="${esc(x.vid)}" ${x.vid === this._vid ? "selected" : ""}>${esc(x.name)}</option>`).join("")}</select>
+            </label>` : ""}
+            <label class="field"><span>Odometer (${esc(v?.unit || "mi")})</span>
+              <input type="number" name="odometer" value="${odo}" min="0" step="1" inputmode="numeric" required>
+              ${odo !== "" ? `<span class="hint">Last reading: ${fmtNum(odo)} ${esc(v.unit)}</span>` : ""}
+            </label>
+            <div class="grid2">
+              <label class="field"><span>Gallons</span><input type="number" name="gallons" min="0" step="0.001" inputmode="decimal" placeholder="0.000" required></label>
+              <label class="field"><span>Total cost ($)</span><input type="number" name="cost" min="0" step="0.01" inputmode="decimal" placeholder="0.00" required></label>
+            </div>
+            <div class="ppg muted" id="ppg"></div>
+            <label class="field"><span>Date</span><input type="date" name="date" value="${todayIso()}" max="${todayIso()}"></label>
+          </form>
+        </div>
+        <footer>
+          <div class="error" id="err" role="alert"></div>
+          <button class="btn" id="cancel">Cancel</button>
+          <button class="btn primary" id="save">Save</button>
+        </footer>
+      </div>`;
+
+    const $ = (id) => this.shadowRoot.getElementById(id);
+    const f = $("f");
+    $("x").addEventListener("click", () => this._close());
+    $("cancel").addEventListener("click", () => this._close());
+    this.shadowRoot.querySelector(".scrim").addEventListener("click", () => this._close());
+    $("save").addEventListener("click", () => this._save());
+    f.addEventListener("submit", (e) => { e.preventDefault(); this._save(); });
+    f.addEventListener("input", () => {
+      $("err").textContent = "";
+      const g = parseFloat(f.elements.gallons.value), c = parseFloat(f.elements.cost.value);
+      $("ppg").textContent = g > 0 && c > 0 ? `${money(this._card._hass, c / g)} per gallon` : "";
+    });
+    f.elements.vehicle?.addEventListener("change", (e) => {
+      const keep = { gallons: f.elements.gallons.value, cost: f.elements.cost.value, date: f.elements.date.value };
+      this._vid = e.target.value;
+      this._render();
+      const g = this.shadowRoot.getElementById("f");
+      for (const [k, val] of Object.entries(keep)) g.elements[k].value = val;
+    });
+  }
+
+  async _save() {
+    const f = this.shadowRoot.getElementById("f");
+    const err = this.shadowRoot.getElementById("err");
+    const save = this.shadowRoot.getElementById("save");
+    const v = this._vehicle;
+    const odometer = parseInt(f.elements.odometer.value, 10);
+    const gallons = parseFloat(f.elements.gallons.value);
+    const cost = parseFloat(f.elements.cost.value);
+    const date = f.elements.date.value || todayIso();
+
+    if (!v) return (err.textContent = "Pick a vehicle.");
+    if (Number.isNaN(odometer) || odometer < 0) return (err.textContent = "Enter the odometer reading.");
+    if (v.odometer != null && odometer < v.odometer)
+      return (err.textContent = `That's lower than the last reading (${fmtNum(v.odometer)} ${v.unit}).`);
+    if (!(gallons > 0)) return (err.textContent = "Enter how many gallons.");
+    if (Number.isNaN(cost) || cost < 0) return (err.textContent = "Enter the total cost.");
+
+    save.disabled = true;
+    save.textContent = "Saving…";
+    try {
+      await this._card._hass.callWS({
+        type: `${DOMAIN}/add_fuel`, vehicle_id: v.vid, entry_date: date, odometer, gallons, cost,
+      });
+      this._card.dispatchEvent(new CustomEvent("hass-notification", {
+        bubbles: true, composed: true, detail: { message: `Fill-up logged for ${v.name}` },
+      }));
+      this._close();
+    } catch (e) {
+      err.textContent = e?.message || "Couldn't save. Try again.";
+      save.disabled = false;
+      save.textContent = "Save";
+    }
+  }
+}
+
 const DIALOG_CSS = `
   :host { position: fixed; inset: 0; z-index: 1000; display: flex; align-items: center; justify-content: center;
           font-family: var(--paper-font-body1_-_font-family, var(--ha-font-family-body, Roboto, system-ui, sans-serif));
           color: var(--primary-text-color); }
   .scrim { position: absolute; inset: 0; background: rgba(0,0,0,.45); animation: fade .15s ease; }
   .dialog {
-    position: relative; width: min(520px, calc(100vw - 32px)); max-height: calc(100vh - 48px);
+    position: relative; width: min(480px, calc(100vw - 32px));
+    max-height: calc(100vh - 48px);   /* fallback for browsers without dvh */
+    max-height: min(calc(100dvh - 48px), 760px);
     display: flex; flex-direction: column; overflow: hidden;
     background: var(--card-background-color, var(--ha-card-background, #fff));
     border-radius: var(--ha-dialog-border-radius, 24px);
     box-shadow: 0 12px 40px rgba(0,0,0,.3); animation: pop .18s ease;
   }
-  header { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; padding: 20px 20px 12px; }
-  .title { font-size: 20px; font-weight: 600; }
-  .subtitle { font-size: 14px; margin-top: 2px; }
+  header { flex: none; display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; padding: 16px 16px 10px; }
+  .title { font-size: 18px; font-weight: 600; }
+  .subtitle { font-size: 13px; margin-top: 1px; }
   .icon-btn { all: unset; cursor: pointer; display: flex; padding: 8px; margin: -6px -8px 0 0; border-radius: 50%; color: var(--secondary-text-color); }
   .icon-btn:hover { background: var(--secondary-background-color, rgba(127,127,127,.1)); }
   .icon-btn:focus-visible { outline: 2px solid var(--primary-color); }
-  .content { padding: 4px 20px 8px; overflow-y: auto; }
-  footer { display: flex; align-items: center; justify-content: flex-end; gap: 8px; padding: 12px 20px 20px; border-top: 1px solid var(--divider-color, rgba(127,127,127,.15)); }
+  /* min-height: 0 lets the middle shrink and scroll instead of pushing header/footer out */
+  .content { flex: 1 1 auto; min-height: 0; padding: 4px 16px 8px; overflow-y: auto; overscroll-behavior: contain; -webkit-overflow-scrolling: touch; }
+  footer { flex: none; display: flex; align-items: center; justify-content: flex-end; gap: 8px; padding: 10px 16px 16px; border-top: 1px solid var(--divider-color, rgba(127,127,127,.15)); }
+  .handle { display: none; }
+  .dialog.narrow { width: min(400px, calc(100vw - 32px)); }
+  .hint { font-size: 12px; color: var(--secondary-text-color); }
+  .ppg { font-size: 13px; margin-top: -6px; font-variant-numeric: tabular-nums; }
+  .ppg:empty { display: none; }
   .error { flex: 1; color: var(--error-color, #db4437); font-size: 13px; }
 
-  .item { all: unset; box-sizing: border-box; cursor: pointer; display: flex; gap: 12px; width: 100%; padding: 12px 8px; margin: 0 -8px; width: calc(100% + 16px); border-radius: 10px; }
+  .item { all: unset; box-sizing: border-box; cursor: pointer; display: flex; gap: 12px; width: 100%; padding: 10px 8px; margin: 0 -8px; width: calc(100% + 16px); border-radius: 10px; }
   .item { position: relative; }
   .item + .item::before { content: ""; position: absolute; top: 0; left: 8px; right: 8px; border-top: 1px solid var(--divider-color, rgba(127,127,127,.15)); }
   .item:hover { background: var(--secondary-background-color, rgba(127,127,127,.08)); }
@@ -679,7 +942,7 @@ const DIALOG_CSS = `
   .item-icon { padding-top: 1px; flex: none; }
   .item-main { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 6px; }
   .item-top { display: flex; justify-content: space-between; align-items: baseline; gap: 8px; }
-  .item-label { font-size: 15px; font-weight: 500; }
+  .item-label { font-size: 14px; font-weight: 500; }
   .chip { font-size: 13px; font-weight: 500; white-space: nowrap; font-variant-numeric: tabular-nums; }
   .bar { height: 4px; border-radius: 2px; background: var(--divider-color, rgba(127,127,127,.2)); overflow: hidden; }
   .bar span { display: block; height: 100%; border-radius: 2px; }
@@ -688,25 +951,25 @@ const DIALOG_CSS = `
          background: var(--secondary-background-color, rgba(127,127,127,.12)); color: var(--secondary-text-color); }
 
   form { display: flex; flex-direction: column; gap: 14px; padding-bottom: 8px; }
-  .tabs { margin: 0 20px 8px; }
+  .tabs { flex: none; margin: 0 16px 8px; }
   .pad { padding: 12px 0; }
   .summary { padding: 4px 0 8px; border-bottom: 1px solid var(--divider-color, rgba(127,127,127,.15)); margin-bottom: 4px; }
   .total { display: flex; flex-direction: column; gap: 2px; margin-bottom: 12px; font-size: 13px; }
-  .total-v { font-size: 28px; font-weight: 600; letter-spacing: -.01em; font-variant-numeric: tabular-nums; color: var(--primary-text-color); }
+  .total-v { font-size: 24px; font-weight: 600; letter-spacing: -.01em; font-variant-numeric: tabular-nums; color: var(--primary-text-color); }
   .stats { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; margin-bottom: 10px; }
   .stat { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
-  .stat-v { font-size: 15px; font-weight: 500; font-variant-numeric: tabular-nums; }
+  .stat-v { font-size: 14px; font-weight: 500; font-variant-numeric: tabular-nums; }
   .stat-l { font-size: 12px; }
   .year { display: flex; justify-content: space-between; font-size: 13px; font-weight: 600; letter-spacing: .04em;
           padding: 14px 0 4px; color: var(--secondary-text-color); font-variant-numeric: tabular-nums; }
-  .h-row { display: flex; gap: 12px; padding: 10px 0; align-items: flex-start; }
+  .h-row { display: flex; gap: 12px; padding: 8px 0; align-items: flex-start; }
   .h-row + .h-row { border-top: 1px solid var(--divider-color, rgba(127,127,127,.15)); }
   .h-icon { color: var(--secondary-text-color); padding-top: 1px; flex: none; }
   .h-main { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
-  .h-title { font-size: 15px; font-weight: 500; }
+  .h-title { font-size: 14px; font-weight: 500; }
   .h-meta, .h-extra { font-size: 12px; font-variant-numeric: tabular-nums; }
   .h-extra { white-space: pre-wrap; }
-  .h-cost { font-size: 15px; font-weight: 500; white-space: nowrap; font-variant-numeric: tabular-nums; }
+  .h-cost { font-size: 14px; font-weight: 500; white-space: nowrap; font-variant-numeric: tabular-nums; }
   .seg { display: grid; grid-template-columns: 1fr 1fr; gap: 4px; padding: 4px; border-radius: 999px;
          background: var(--secondary-background-color, rgba(127,127,127,.1)); }
   .seg button { all: unset; box-sizing: border-box; text-align: center; cursor: pointer; padding: 8px 12px;
@@ -731,9 +994,20 @@ const DIALOG_CSS = `
   fieldset { border: 0; padding: 0; margin: 0; }
   legend { font-size: 13px; color: var(--secondary-text-color); margin-bottom: 8px; padding: 0; }
   .legend-hint { opacity: .75; margin-left: 4px; font-size: 12px; }
+  details.repairs { border: 1px solid var(--divider-color, rgba(127,127,127,.25)); border-radius: 12px; }
+  details.repairs summary { list-style: none; cursor: pointer; display: flex; align-items: center; gap: 8px;
+                            padding: 10px 12px; font-size: 14px; color: var(--primary-text-color); }
+  details.repairs summary::-webkit-details-marker { display: none; }
+  details.repairs summary:focus-visible { outline: 2px solid var(--primary-color); border-radius: 12px; }
+  details.repairs summary > span:first-of-type { flex: 1; }
+  details.repairs summary ha-icon { --mdc-icon-size: 18px; color: var(--secondary-text-color); }
+  .rep-count { font-size: 12px; color: var(--primary-color); font-weight: 500; }
+  details.repairs .chev { transition: transform .15s ease; }
+  details.repairs[open] .chev { transform: rotate(180deg); }
+  details.repairs .checks { padding: 0 12px 12px; }
   .costs.single { grid-template-columns: 1fr; }
   .costs.single [data-cost="maintenance"] { max-width: calc(50% - 6px); }
-  @media (max-width: 420px) { .costs.single [data-cost="maintenance"] { max-width: none; } }
+  @media (max-width: 340px) { .costs.single [data-cost="maintenance"] { max-width: none; } }
   [hidden] { display: none !important; }
   .checks { display: flex; flex-wrap: wrap; gap: 8px; }
   .check { position: relative; display: inline-flex; align-items: center; gap: 6px; cursor: pointer; font-size: 14px;
@@ -743,10 +1017,31 @@ const DIALOG_CSS = `
   .check:has(input:checked) { background: var(--primary-color); border-color: var(--primary-color); color: var(--text-primary-color, #fff); }
   .check:has(input:checked) ha-icon { color: inherit; }
   .check:has(input:focus-visible) { outline: 2px solid var(--primary-color); outline-offset: 2px; }
-  @media (max-width: 420px) { .grid2 { grid-template-columns: 1fr; } }
+  @media (max-width: 340px) { .grid2 { grid-template-columns: 1fr; } }
+  /* Phones: bottom sheet sized to the visible screen, clear of the notch and home bar */
+  @media (max-width: 600px) {
+    :host { align-items: flex-end; }
+    .dialog, .dialog.narrow {
+      width: 100%;
+      max-height: calc(100vh - 24px);
+      max-height: calc(100dvh - env(safe-area-inset-top, 0px) - 12px);
+      border-radius: 20px 20px 0 0;
+      animation: sheet .22s cubic-bezier(.2,.8,.2,1);
+    }
+    .handle { display: block; width: 36px; height: 4px; border-radius: 2px; margin: 8px auto 0;
+              background: var(--divider-color, rgba(127,127,127,.35)); flex: none; }
+    header { padding-top: 10px; }
+    footer { padding-bottom: calc(12px + env(safe-area-inset-bottom, 0px)); }
+    footer .btn { flex: 1; }
+    footer .error { flex-basis: 100%; order: -1; }
+    footer { flex-wrap: wrap; }
+    /* 16px stops iOS from zooming the page when a field is focused */
+    input[type=text], input[type=number], input[type=date], textarea, select { font-size: 16px; }
+  }
+  @keyframes sheet { from { transform: translateY(100%); } }
   @keyframes fade { from { opacity: 0; } }
   @keyframes pop { from { opacity: 0; transform: translateY(8px) scale(.98); } }
-  @media (prefers-reduced-motion: reduce) { .scrim, .dialog { animation: none; } }
+  @media (prefers-reduced-motion: reduce) { .scrim, .dialog { animation: none !important; } }
 `;
 
 /*
@@ -759,6 +1054,8 @@ const DIALOG_CSS = `
 const ELEMENTS = {
   "vehicle-service-card": VehicleServiceCard,
   "vehicle-service-dialog": VehicleServiceDialog,
+  "vehicle-fill-up-card": VehicleFillUpCard,
+  "vehicle-fill-up-dialog": VehicleFillUpDialog,
 };
 
 function registerElements() {
@@ -790,6 +1087,16 @@ if (!window.customCards.some((c) => c.type === "vehicle-service-card")) {
     description: "Mileage, upcoming maintenance and logging for a vehicle.",
     preview: false,
     documentationURL: "https://github.com/toxictody1337/vehicle-service-manager#dashboard-card",
+  });
+}
+
+if (!window.customCards.some((c) => c.type === "vehicle-fill-up-card")) {
+  window.customCards.push({
+    type: "vehicle-fill-up-card",
+    name: "Vehicle Fill Up",
+    description: "Small button to log a gas fill-up: odometer, gallons and cost.",
+    preview: true,
+    documentationURL: "https://github.com/toxictody1337/vehicle-service-manager#fill-up-card",
   });
 }
 
