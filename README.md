@@ -86,7 +86,7 @@ It shows:
 - Current mileage
 - Up to three items due within 500 miles or 1 month, plus anything overdue
 - **See all maintenance:** every tracked item with its progress, when it's due, and when it was last done
-- **Log maintenance:** date, odometer, what was done, shop, cost and notes
+- **Log maintenance:** switch between **Maintenance** (scheduled items; resets their reminders) and **Repair** (one-off work like a control arm or alternator, with a category and description). Both take date, odometer, shop and cost, and count toward the cost sensors
 
 Tapping an item opens the log form with that item already selected.
 

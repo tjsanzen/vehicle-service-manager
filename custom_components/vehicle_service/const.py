@@ -126,18 +126,22 @@ SERVICE_INTERVAL_TYPE = {
 
 # Repair categories
 REPAIR_CATEGORIES = {
+    "suspension": "Suspension / steering",
     "brakes_front": "Brake pads – front",
     "brakes_rear": "Brake pads – rear",
     "rotors_front": "Rotors – front",
     "rotors_rear": "Rotors – rear",
-    "suspension": "Suspension / shocks",
     "alignment": "Alignment",
+    "engine": "Engine",
+    "transmission_drivetrain": "Transmission / drivetrain",
+    "cooling": "Cooling system",
+    "hvac": "Heating / A/C",
     "timing_belt": "Timing belt",
     "battery": "Battery",
     "starter_alternator": "Starter / alternator",
     "exhaust": "Exhaust",
-    "body_glass": "Body / glass",
     "electrical": "Electrical",
+    "body_glass": "Body / glass",
     "other": "Other",
 }
 

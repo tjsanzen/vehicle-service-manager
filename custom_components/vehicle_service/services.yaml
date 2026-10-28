@@ -139,6 +139,8 @@ add_repair:
       selector:
         select:
           options:
+            - label: "Suspension / steering"
+              value: suspension
             - label: "Brake pads – front"
               value: brakes_front
             - label: "Brake pads – rear"
@@ -147,10 +149,16 @@ add_repair:
               value: rotors_front
             - label: "Rotors – rear"
               value: rotors_rear
-            - label: "Suspension / shocks"
-              value: suspension
             - label: "Alignment"
               value: alignment
+            - label: "Engine"
+              value: engine
+            - label: "Transmission / drivetrain"
+              value: transmission_drivetrain
+            - label: "Cooling system"
+              value: cooling
+            - label: "Heating / A/C"
+              value: hvac
             - label: "Timing belt"
               value: timing_belt
             - label: "Battery"
@@ -159,10 +167,10 @@ add_repair:
               value: starter_alternator
             - label: "Exhaust"
               value: exhaust
-            - label: "Body / glass"
-              value: body_glass
             - label: "Electrical"
               value: electrical
+            - label: "Body / glass"
+              value: body_glass
             - label: "Other"
               value: other
     description:

@@ -25,13 +25,13 @@ from .const import (
     CONF_PLATE, CONF_VIN, CONF_ODOMETER_ENTITY, CONF_SERVICES, CONF_INTERVALS,
     CONF_LAST_INSPECTION_DATE, CONF_LAST_INSPECTION_ODOMETER, CONF_REGISTRATION_EXPIRES,
     CONF_SCHEDULE, CONF_SEVERE, CONF_ENGINE, CONF_TRANSMISSION, CONF_FUEL,
-    ALL_SERVICE_IDS, REPAIR_CATEGORIES, TIRE_POSITIONS,
+    ALL_SERVICE_IDS, REPAIR_CATEGORIES, TIRE_POSITIONS, SERVICE_LABELS,
     SERVICE_STATE_INSPECTION, SERVICE_REGISTRATION,
     HA_SERVICE_ADD_ENTRY, HA_SERVICE_UPDATE_ODOMETER,
     HA_SERVICE_ADD_REPAIR, HA_SERVICE_ADD_TIRE,
 )
 from .helpers import add_months, parse_date
-from .store import get_store, VehicleServiceStore
+from .store import cost_summary, get_store, VehicleServiceStore
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -469,12 +469,54 @@ def _register_websocket(hass: HomeAssistant) -> None:
         )
         connection.send_result(msg["id"], {"success": True})
 
+    @websocket_api.websocket_command({
+        vol.Required("type"): f"{DOMAIN}/history",
+        vol.Required("vehicle_id"): str,
+    })
+    @websocket_api.async_response
+    async def ws_history(hass, connection, msg):
+        vehicle = _vehicle_or_error(connection, msg)
+        if vehicle is None:
+            return
+        connection.send_result(msg["id"], {
+            "entries": _history_entries(vehicle),
+            "costs": cost_summary(vehicle),
+        })
+
     for fn in [
-        ws_get_vehicles, ws_add_service_entry, ws_update_service_entry,
+        ws_get_vehicles, ws_history, ws_add_service_entry, ws_update_service_entry,
         ws_delete_service_entry, ws_add_repair, ws_update_repair, ws_delete_repair,
         ws_add_tire, ws_delete_tire, ws_update_odometer,
     ]:
         websocket_api.async_register_command(hass, fn)
+
+
+def _history_entries(vehicle: dict[str, Any]) -> list[dict[str, Any]]:
+    """Service entries, repairs and tires as one list, newest first."""
+    entries: list[dict[str, Any]] = []
+    for i, e in enumerate(vehicle.get("history", [])):
+        entries.append({
+            "kind": "service", "index": i, "date": e.get("date"), "odometer": e.get("odometer"),
+            "title": ", ".join(SERVICE_LABELS.get(s, s) for s in e.get("services", [])),
+            "services": e.get("services", []), "notes": e.get("notes", ""),
+            "shop": e.get("shop", ""), "cost": e.get("cost", 0), "auto": e.get("auto", False),
+        })
+    for i, r in enumerate(vehicle.get("repairs", [])):
+        entries.append({
+            "kind": "repair", "index": i, "date": r.get("date"), "odometer": r.get("odometer"),
+            "title": r.get("description") or REPAIR_CATEGORIES.get(r.get("category"), "Repair"),
+            "category": REPAIR_CATEGORIES.get(r.get("category"), r.get("category")),
+            "shop": r.get("shop", ""), "cost": r.get("cost", 0),
+        })
+    for i, t in enumerate(vehicle.get("tires", [])):
+        name = " ".join(p for p in (t.get("brand"), t.get("model")) if p)
+        entries.append({
+            "kind": "tires", "index": i, "date": t.get("date"), "odometer": t.get("odometer"),
+            "title": f"Tires{': ' + name if name else ''}", "size": t.get("size", ""),
+            "shop": t.get("shop", ""), "cost": t.get("cost", 0),
+        })
+    entries.sort(key=lambda x: (x.get("date") or "", x.get("odometer") or 0), reverse=True)
+    return entries
 
 
 # ── HA actions (for automations / scripts) ────────────────────────────────────

@@ -23,6 +23,27 @@ const STATUS = {
   overdue: { label: "Overdue", color: "var(--error-color, #db4437)" },
 };
 
+// Keep in sync with REPAIR_CATEGORIES in const.py
+const REPAIR_CATEGORIES = [
+  ["suspension", "Suspension / steering"],
+  ["brakes_front", "Brake pads – front"],
+  ["brakes_rear", "Brake pads – rear"],
+  ["rotors_front", "Rotors – front"],
+  ["rotors_rear", "Rotors – rear"],
+  ["alignment", "Alignment"],
+  ["engine", "Engine"],
+  ["transmission_drivetrain", "Transmission / drivetrain"],
+  ["cooling", "Cooling system"],
+  ["hvac", "Heating / A/C"],
+  ["timing_belt", "Timing belt"],
+  ["battery", "Battery"],
+  ["starter_alternator", "Starter / alternator"],
+  ["exhaust", "Exhaust"],
+  ["electrical", "Electrical"],
+  ["body_glass", "Body / glass"],
+  ["other", "Other"],
+];
+
 const esc = (v) =>
   String(v ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
 
@@ -190,7 +211,7 @@ class VehicleServiceCard extends HTMLElement {
 
   static getStubConfig(hass) {
     const ent = Object.values(hass?.entities || {}).find((e) => e.platform === DOMAIN && e.device_id);
-    return { device: ent?.device_id || "" };
+    return { device: ent?.device_id || "", ...DEFAULTS };
   }
 
   setConfig(config) {
@@ -253,7 +274,7 @@ class VehicleServiceCard extends HTMLElement {
             <span class="dot" style="background:${STATUS[s.status]?.color}"></span>
           </button>`
           )
-          .join("") + (more > 0 ? `<div class="more muted">+${more} more due soon</div>` : "")
+          .join("") + (more > 0 ? `<div class="more muted">+${more} more</div>` : "")
       : `<div class="allgood"><ha-icon icon="mdi:check-circle-outline"></ha-icon><span>Nothing due in the next ${fmtNum(cfg.upcoming_miles)} ${esc(vehicle.unit)} or ${cfg.upcoming_months} month${cfg.upcoming_months === 1 ? "" : "s"}</span></div>`;
 
     this.shadowRoot.innerHTML = `
@@ -348,6 +369,9 @@ class VehicleServiceDialog extends HTMLElement {
     this._mode = mode;
     this._card = card;
     this._preselect = new Set(preselect);
+    this._kind = "service"; // or "repair"
+    this._tab = mode === "history" ? "history" : "schedule";
+    this._history = null;      // fetched when the History tab opens
   }
 
   connectedCallback() {
@@ -379,7 +403,11 @@ class VehicleServiceDialog extends HTMLElement {
           </div>
           <button class="icon-btn" id="x" aria-label="Close"><ha-icon icon="mdi:close"></ha-icon></button>
         </header>
-        <div class="content">${isLog ? this._logForm(v) : this._allList(v)}</div>
+        ${isLog ? "" : `<div class="tabs seg" role="tablist" aria-label="View">
+            <button type="button" role="tab" data-tab="schedule" aria-selected="${this._tab === "schedule"}">Schedule</button>
+            <button type="button" role="tab" data-tab="history" aria-selected="${this._tab === "history"}">History &amp; costs</button>
+          </div>`}
+        <div class="content">${isLog ? this._logForm(v) : this._tab === "history" ? this._historyView(v) : this._allList(v)}</div>
         ${isLog ? `<footer>
             <div class="error" id="err" role="alert"></div>
             <button class="btn" id="cancel">Cancel</button>
@@ -393,13 +421,101 @@ class VehicleServiceDialog extends HTMLElement {
     if (isLog) {
       $("cancel").addEventListener("click", () => this._close());
       $("save").addEventListener("click", () => this._save());
-      setTimeout(() => this.shadowRoot.querySelector("input")?.focus(), 0);
+      $("f").addEventListener("input", () => { $("err").textContent = ""; });
+      this.shadowRoot.querySelectorAll(".seg button").forEach((b) =>
+        b.addEventListener("click", () => this._switchKind(b.dataset.kind))
+      );
     } else {
+      this.shadowRoot.querySelectorAll(".tabs button").forEach((b) =>
+        b.addEventListener("click", () => { this._tab = b.dataset.tab; this._render(); })
+      );
+      if (this._tab === "history" && this._history === null) this._loadHistory();
       $("tolog").addEventListener("click", () => { this._mode = "log"; this._render(); });
       this.shadowRoot.querySelectorAll(".item").forEach((el) =>
         el.addEventListener("click", () => { this._mode = "log"; this._preselect = new Set([el.dataset.service]); this._render(); })
       );
     }
+  }
+
+  async _loadHistory() {
+    this._history = "loading";
+    try {
+      this._history = await this._card._hass.callWS({
+        type: `${DOMAIN}/history`, vehicle_id: this._card._vehicle.vid,
+      });
+    } catch (e) {
+      this._history = { error: e?.message || "Couldn't load history." };
+    }
+    if (this.isConnected && this._mode !== "log" && this._tab === "history") this._render();
+  }
+
+  _money(n) {
+    const currency = this._card._hass?.config?.currency || "USD";
+    try {
+      return new Intl.NumberFormat(undefined, { style: "currency", currency }).format(Number(n) || 0);
+    } catch (e) {
+      return `$${(Number(n) || 0).toFixed(2)}`;
+    }
+  }
+
+  _historyView(v) {
+    const h = this._history;
+    if (h === null || h === "loading") return `<div class="muted pad">Loading history…</div>`;
+    if (h.error) return `<div class="error pad">${esc(h.error)}</div>`;
+    const c = h.costs || {};
+    const cat = c.by_category || {};
+    const stat = (label, value) => `<div class="stat"><span class="stat-v">${value}</span><span class="stat-l muted">${label}</span></div>`;
+
+    const summary = `
+      <div class="summary">
+        <div class="total"><span class="total-v">${this._money(c.total)}</span><span class="muted">Total spent to date</span></div>
+        <div class="stats">
+          ${stat("Maintenance", this._money(cat.maintenance))}
+          ${stat("Repairs", this._money(cat.repairs))}
+          ${stat("Tires", this._money(cat.tires))}
+        </div>
+        <div class="stats">
+          ${stat("This year", this._money(c.ytd))}
+          ${stat("Last 12 months", this._money(c.last_12_months))}
+          ${stat("Per mile", c.per_mile != null ? this._money(c.per_mile) : "—")}
+        </div>
+      </div>`;
+
+    const entries = h.entries || [];
+    if (!entries.length) return summary + `<div class="muted pad">Nothing logged yet. Use Log maintenance to add the first entry.</div>`;
+
+    const icon = { service: "mdi:wrench", repair: "mdi:tools", tires: "mdi:tire" };
+    const kindLabel = { service: "Maintenance", repair: "Repair", tires: "Tires" };
+    const years = {};
+    for (const e of entries) (years[(e.date || "").slice(0, 4) || "Undated"] ||= []).push(e);
+
+    const groups = Object.entries(years)
+      .sort((a, b) => b[0].localeCompare(a[0]))
+      .map(([year, list]) => {
+        const sum = list.reduce((t, e) => t + (Number(e.cost) || 0), 0);
+        const rows = list.map((e) => {
+          const meta = [
+            e.date ? fmtDate(e.date, true) : "",
+            e.odometer ? `${fmtNum(e.odometer)} ${esc(v.unit)}` : "",
+            e.shop ? esc(e.shop) : "",
+          ].filter(Boolean).join(" · ");
+          const extra = e.kind === "repair" ? e.category : e.kind === "tires" ? e.size : e.notes;
+          return `
+            <div class="h-row">
+              <span class="h-icon"><ha-icon icon="${icon[e.kind]}"></ha-icon></span>
+              <span class="h-main">
+                <span class="h-title">${esc(e.title || kindLabel[e.kind])}</span>
+                <span class="h-meta muted">${kindLabel[e.kind]}${meta ? " · " + meta : ""}</span>
+                ${extra ? `<span class="h-extra muted">${esc(extra)}</span>` : ""}
+              </span>
+              <span class="h-cost${e.cost ? "" : " muted"}">${e.cost ? this._money(e.cost) : "—"}</span>
+            </div>`;
+        }).join("");
+        return `<div class="year"><span>${esc(year)}</span><span class="muted">${this._money(sum)}</span></div>${rows}`;
+      })
+      .join("");
+
+    return summary + groups;
   }
 
   _allList(v) {
@@ -429,15 +545,37 @@ class VehicleServiceDialog extends HTMLElement {
       .join("");
   }
 
+  _switchKind(kind) {
+    if (kind === this._kind) return;
+    // Carry shared fields over to the other form
+    const f = this.shadowRoot.getElementById("f");
+    const keep = {};
+    for (const name of ["date", "odometer", "shop", "cost"]) keep[name] = f.elements[name]?.value;
+    this._kind = kind;
+    this._render();
+    const g = this.shadowRoot.getElementById("f");
+    for (const [name, val] of Object.entries(keep)) if (val != null && g.elements[name]) g.elements[name].value = val;
+    this.shadowRoot.querySelector(`.seg button[data-kind="${kind}"]`)?.focus();
+  }
+
   _logForm(v) {
     const odo = v.odometer != null && !Number.isNaN(v.odometer) ? Math.round(v.odometer) : "";
+    const repair = this._kind === "repair";
     const services = [...v.services].sort((a, b) => a.label.localeCompare(b.label));
-    return `
-      <form id="f" novalidate>
-        <div class="grid2">
-          <label class="field"><span>Date</span><input type="date" name="date" value="${todayIso()}" max="${todayIso()}" required></label>
-          <label class="field"><span>Odometer (${esc(v.unit)})</span><input type="number" name="odometer" value="${odo}" min="0" step="1" inputmode="numeric" required></label>
-        </div>
+    const seg = (kind, label) =>
+      `<button type="button" role="tab" data-kind="${kind}" aria-selected="${this._kind === kind}">${label}</button>`;
+
+    const body = repair
+      ? `
+        <label class="field"><span>Category</span>
+          <select name="category">
+            ${REPAIR_CATEGORIES.map(([k, l]) => `<option value="${k}">${esc(l)}</option>`).join("")}
+          </select>
+        </label>
+        <label class="field"><span>What was done</span>
+          <textarea name="description" rows="2" placeholder="e.g. Replaced both front lower control arm assemblies"></textarea>
+        </label>`
+      : `
         <fieldset>
           <legend>What was done</legend>
           <div class="checks">
@@ -447,12 +585,26 @@ class VehicleServiceDialog extends HTMLElement {
                 <ha-icon icon="${esc(s.icon)}"></ha-icon><span>${esc(s.label)}</span>
               </label>`).join("")}
           </div>
-        </fieldset>
+        </fieldset>`;
+
+    return `
+      <div class="seg" role="tablist" aria-label="Type of work">
+        ${seg("service", "Maintenance")}${seg("repair", "Repair")}
+      </div>
+      <div class="seg-hint muted">${repair
+        ? "One-off work outside the schedule. Counts toward cost totals; doesn't reset any reminders."
+        : "Scheduled items. Logging one resets its reminder."}</div>
+      <form id="f" novalidate>
+        <div class="grid2">
+          <label class="field"><span>Date</span><input type="date" name="date" value="${todayIso()}" max="${todayIso()}" required></label>
+          <label class="field"><span>Odometer (${esc(v.unit)})</span><input type="number" name="odometer" value="${odo}" min="0" step="1" inputmode="numeric" required></label>
+        </div>
+        ${body}
         <div class="grid2">
           <label class="field"><span>Shop</span><input type="text" name="shop" placeholder="e.g. Valvoline, DIY" autocomplete="off"></label>
           <label class="field"><span>Cost ($)</span><input type="number" name="cost" min="0" step="0.01" inputmode="decimal" placeholder="0.00"></label>
         </div>
-        <label class="field"><span>Notes</span><textarea name="notes" rows="2" placeholder="Optional"></textarea></label>
+        ${repair ? "" : `<label class="field"><span>Notes</span><textarea name="notes" rows="2" placeholder="Optional"></textarea></label>`}
       </form>`;
   }
 
@@ -461,30 +613,39 @@ class VehicleServiceDialog extends HTMLElement {
     const err = this.shadowRoot.getElementById("err");
     const save = this.shadowRoot.getElementById("save");
     const data = new FormData(f);
-    const services = data.getAll("services");
+    const repair = this._kind === "repair";
     const odometer = parseInt(data.get("odometer"), 10);
     const date = data.get("date");
+    const shop = (data.get("shop") || "").trim();
+    const cost = parseFloat(data.get("cost")) || 0;
 
     err.textContent = "";
-    if (!services.length) return (err.textContent = "Select at least one item.");
     if (!date) return (err.textContent = "Enter a date.");
     if (Number.isNaN(odometer) || odometer < 0) return (err.textContent = "Enter the odometer reading.");
+
+    let msg;
+    if (repair) {
+      const description = (data.get("description") || "").trim();
+      if (!description) return (err.textContent = "Describe what was done.");
+      msg = {
+        type: `${DOMAIN}/add_repair`, vehicle_id: this._card._vehicle.vid,
+        entry_date: date, odometer, category: data.get("category"), description, shop, cost,
+      };
+    } else {
+      const services = data.getAll("services");
+      if (!services.length) return (err.textContent = "Select at least one item.");
+      msg = {
+        type: `${DOMAIN}/add_service_entry`, vehicle_id: this._card._vehicle.vid,
+        entry_date: date, odometer, services, shop, cost, notes: (data.get("notes") || "").trim(),
+      };
+    }
 
     save.disabled = true;
     save.textContent = "Saving…";
     try {
-      await this._card._hass.callWS({
-        type: `${DOMAIN}/add_service_entry`,
-        vehicle_id: this._card._vehicle.vid,
-        entry_date: date,
-        odometer,
-        services,
-        shop: (data.get("shop") || "").trim(),
-        cost: parseFloat(data.get("cost")) || 0,
-        notes: (data.get("notes") || "").trim(),
-      });
+      await this._card._hass.callWS(msg);
       this._card.dispatchEvent(new CustomEvent("hass-notification", {
-        bubbles: true, composed: true, detail: { message: "Maintenance logged" },
+        bubbles: true, composed: true, detail: { message: repair ? "Repair logged" : "Maintenance logged" },
       }));
       this._close();
     } catch (e) {
@@ -534,6 +695,37 @@ const DIALOG_CSS = `
          background: var(--secondary-background-color, rgba(127,127,127,.12)); color: var(--secondary-text-color); }
 
   form { display: flex; flex-direction: column; gap: 14px; padding-bottom: 8px; }
+  .tabs { margin: 0 20px 8px; }
+  .pad { padding: 12px 0; }
+  .summary { padding: 4px 0 8px; border-bottom: 1px solid var(--divider-color, rgba(127,127,127,.15)); margin-bottom: 4px; }
+  .total { display: flex; flex-direction: column; gap: 2px; margin-bottom: 12px; font-size: 13px; }
+  .total-v { font-size: 28px; font-weight: 600; letter-spacing: -.01em; font-variant-numeric: tabular-nums; color: var(--primary-text-color); }
+  .stats { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; margin-bottom: 10px; }
+  .stat { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+  .stat-v { font-size: 15px; font-weight: 500; font-variant-numeric: tabular-nums; }
+  .stat-l { font-size: 12px; }
+  .year { display: flex; justify-content: space-between; font-size: 13px; font-weight: 600; letter-spacing: .04em;
+          padding: 14px 0 4px; color: var(--secondary-text-color); font-variant-numeric: tabular-nums; }
+  .h-row { display: flex; gap: 12px; padding: 10px 0; align-items: flex-start; }
+  .h-row + .h-row { border-top: 1px solid var(--divider-color, rgba(127,127,127,.15)); }
+  .h-icon { color: var(--secondary-text-color); padding-top: 1px; flex: none; }
+  .h-main { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
+  .h-title { font-size: 15px; font-weight: 500; }
+  .h-meta, .h-extra { font-size: 12px; font-variant-numeric: tabular-nums; }
+  .h-extra { white-space: pre-wrap; }
+  .h-cost { font-size: 15px; font-weight: 500; white-space: nowrap; font-variant-numeric: tabular-nums; }
+  .seg { display: grid; grid-template-columns: 1fr 1fr; gap: 4px; padding: 4px; border-radius: 999px;
+         background: var(--secondary-background-color, rgba(127,127,127,.1)); }
+  .seg button { all: unset; box-sizing: border-box; text-align: center; cursor: pointer; padding: 8px 12px;
+                border-radius: 999px; font-size: 14px; font-weight: 500; color: var(--secondary-text-color); }
+  .seg button[aria-selected="true"] { background: var(--card-background-color, #fff); color: var(--primary-text-color);
+                                      box-shadow: 0 1px 3px rgba(0,0,0,.15); }
+  .seg button:focus-visible { outline: 2px solid var(--primary-color); outline-offset: 1px; }
+  .seg-hint { font-size: 12px; margin: 8px 2px 14px; }
+  select { font: inherit; font-size: 15px; color: var(--primary-text-color); background: transparent;
+           border: 1px solid var(--divider-color, rgba(127,127,127,.3)); border-radius: 10px; padding: 10px 12px; width: 100%;
+           color-scheme: light dark; }
+  select:focus { outline: 2px solid var(--primary-color); outline-offset: -1px; border-color: transparent; }
   .grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
   .field { display: flex; flex-direction: column; gap: 6px; font-size: 13px; color: var(--secondary-text-color); }
   input[type=text], input[type=number], input[type=date], textarea {
